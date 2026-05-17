@@ -18,6 +18,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runGraph(args[1:], stdout, stderr)
 	case "scan":
 		return runScan(args[1:], stdout, stderr)
+	case "serve":
+		return runServe(args[1:], stdout, stderr)
 	case "symbols":
 		return runSymbols(args[1:], stdout, stderr)
 	default:
@@ -37,6 +39,7 @@ func printRootHelp(w io.Writer) {
 	fmt.Fprintln(w, "  calls   list go function and method calls under a local path")
 	fmt.Fprintln(w, "  graph   build a depth-limited call graph from an entry symbol")
 	fmt.Fprintln(w, "  scan   scan go packages under a local path")
+	fmt.Fprintln(w, "  serve   start local http api server for a go project")
 	fmt.Fprintln(w, "  symbols   list go function and method symbols under a local path")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Flags:")
