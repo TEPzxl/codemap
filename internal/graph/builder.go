@@ -1,0 +1,248 @@
+package graph
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+type Symbol struct {
+	ID        string
+	Label     string
+	Kind      string
+	Package   string
+	Receiver  string
+	File      string
+	StartLine int
+	EndLine   int
+}
+
+type Call struct {
+	From       string
+	To         string
+	Kind       string
+	Resolution EdgeResolution
+	Callsite   Callsite
+}
+
+type BuildOptions struct {
+	Entry          string
+	Depth          int
+	ShowExternal   bool
+	ShowUnresolved bool
+	ShowInterface  bool
+}
+
+func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, error) {
+	symbolByID := make(map[string]Symbol, len(symbols))
+	for _, symbol := range symbols {
+		symbolByID[symbol.ID] = symbol
+	}
+
+	entry, err := resolveEntry(options.Entry, symbols)
+	if err != nil {
+		return Graph{}, err
+	}
+	if options.Depth < 0 {
+		return Graph{}, fmt.Errorf("depth must be >= 0")
+	}
+
+	adjacency := make(map[string][]Call)
+	for _, call := range calls {
+		if !includeCall(call, options) {
+			continue
+		}
+		adjacency[call.From] = append(adjacency[call.From], call)
+	}
+	for from := range adjacency {
+		sort.Slice(adjacency[from], func(i, j int) bool {
+			if adjacency[from][i].Callsite.Line != adjacency[from][j].Callsite.Line {
+				return adjacency[from][i].Callsite.Line < adjacency[from][j].Callsite.Line
+			}
+			if adjacency[from][i].Callsite.Column != adjacency[from][j].Callsite.Column {
+				return adjacency[from][i].Callsite.Column < adjacency[from][j].Callsite.Column
+			}
+			return adjacency[from][i].To < adjacency[from][j].To
+		})
+	}
+
+	result := Graph{
+		Entry:    entry,
+		Nodes:    make([]Node, 0),
+		Edges:    make([]Edge, 0),
+		Warnings: make([]Warning, 0),
+	}
+	nodeSet := make(map[string]struct{})
+	edgeSet := make(map[string]struct{})
+	expanded := make(map[string]int)
+
+	addNode(&result, nodeSet, nodeForSymbol(symbolByID[entry]))
+	traverse(entry, 0, options.Depth, adjacency, symbolByID, &result, nodeSet, edgeSet, expanded)
+
+	sort.Slice(result.Nodes, func(i, j int) bool {
+		return result.Nodes[i].ID < result.Nodes[j].ID
+	})
+	sort.Slice(result.Edges, func(i, j int) bool {
+		return result.Edges[i].ID < result.Edges[j].ID
+	})
+
+	return result, nil
+}
+
+func resolveEntry(entry string, symbols []Symbol) (string, error) {
+	entry = strings.TrimSpace(entry)
+	if entry == "" {
+		return "", fmt.Errorf("entry symbol is required")
+	}
+
+	for _, symbol := range symbols {
+		if symbol.ID == entry {
+			return symbol.ID, nil
+		}
+	}
+
+	matches := make([]string, 0)
+	for _, symbol := range symbols {
+		if symbol.ID == entry || strings.HasSuffix(symbol.ID, "."+entry) || shortQuery(symbol) == entry {
+			matches = append(matches, symbol.ID)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		sort.Strings(matches)
+		return "", fmt.Errorf("entry symbol is ambiguous %q: %s", entry, strings.Join(matches, ", "))
+	}
+	return "", fmt.Errorf("entry symbol not found: %s", entry)
+}
+
+func shortQuery(symbol Symbol) string {
+	if symbol.Label == "main" {
+		return "main.main"
+	}
+	if symbol.Receiver == "" {
+		return packageName(symbol.Package) + "." + symbol.Label
+	}
+	return packageName(symbol.Package) + "." + symbol.Label
+}
+
+func packageName(pkgPath string) string {
+	if idx := strings.LastIndex(pkgPath, "/"); idx >= 0 {
+		return pkgPath[idx+1:]
+	}
+	return pkgPath
+}
+
+func includeCall(call Call, options BuildOptions) bool {
+	switch call.Resolution {
+	case EdgeResolutionExternal:
+		return options.ShowExternal
+	case EdgeResolutionUnresolved:
+		return options.ShowUnresolved
+	case EdgeResolutionInterface:
+		return options.ShowInterface
+	default:
+		return true
+	}
+}
+
+func traverse(current string, depth int, maxDepth int, adjacency map[string][]Call, symbols map[string]Symbol, result *Graph, nodeSet map[string]struct{}, edgeSet map[string]struct{}, expanded map[string]int) {
+	if depth >= maxDepth {
+		return
+	}
+	if previousDepth, ok := expanded[current]; ok && previousDepth <= depth {
+		return
+	}
+	expanded[current] = depth
+
+	for _, call := range adjacency[current] {
+		toNode := nodeForCallTarget(call, symbols)
+		addNode(result, nodeSet, toNode)
+		addEdge(result, edgeSet, edgeForCall(call, len(result.Edges)+1))
+
+		if _, ok := symbols[call.To]; ok {
+			traverse(call.To, depth+1, maxDepth, adjacency, symbols, result, nodeSet, edgeSet, expanded)
+		}
+	}
+}
+
+func nodeForSymbol(symbol Symbol) Node {
+	return Node{
+		ID:         symbol.ID,
+		Label:      symbol.Label,
+		Kind:       NodeKind(symbol.Kind),
+		Package:    symbol.Package,
+		Receiver:   symbol.Receiver,
+		File:       symbol.File,
+		StartLine:  symbol.StartLine,
+		EndLine:    symbol.EndLine,
+		IsExternal: false,
+	}
+}
+
+func nodeForCallTarget(call Call, symbols map[string]Symbol) Node {
+	if symbol, ok := symbols[call.To]; ok {
+		return nodeForSymbol(symbol)
+	}
+
+	kind := NodeKindUnresolved
+	isExternal := false
+	if call.Resolution == EdgeResolutionExternal {
+		kind = NodeKindExternal
+		isExternal = true
+	}
+
+	return Node{
+		ID:         call.To,
+		Label:      shortLabel(call.To),
+		Kind:       kind,
+		Package:    packageFromTarget(call.To),
+		File:       "",
+		StartLine:  0,
+		EndLine:    0,
+		IsExternal: isExternal,
+	}
+}
+
+func edgeForCall(call Call, index int) Edge {
+	return Edge{
+		ID:         fmt.Sprintf("edge-%06d", index),
+		From:       call.From,
+		To:         call.To,
+		Kind:       call.Kind,
+		Resolution: call.Resolution,
+		Callsite:   call.Callsite,
+	}
+}
+
+func addNode(result *Graph, nodeSet map[string]struct{}, node Node) {
+	if _, ok := nodeSet[node.ID]; ok {
+		return
+	}
+	nodeSet[node.ID] = struct{}{}
+	result.Nodes = append(result.Nodes, node)
+}
+
+func addEdge(result *Graph, edgeSet map[string]struct{}, edge Edge) {
+	key := edge.From + "\x00" + edge.To + "\x00" + edge.Kind + "\x00" + string(edge.Resolution) + "\x00" + edge.Callsite.File + fmt.Sprintf(":%d:%d", edge.Callsite.Line, edge.Callsite.Column)
+	if _, ok := edgeSet[key]; ok {
+		return
+	}
+	edgeSet[key] = struct{}{}
+	result.Edges = append(result.Edges, edge)
+}
+
+func shortLabel(id string) string {
+	if idx := strings.LastIndex(id, "."); idx >= 0 && idx < len(id)-1 {
+		return id[idx+1:]
+	}
+	return id
+}
+
+func packageFromTarget(id string) string {
+	if idx := strings.LastIndex(id, "."); idx > 0 {
+		return id[:idx]
+	}
+	return ""
+}

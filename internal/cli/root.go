@@ -14,6 +14,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "calls":
 		return runCalls(args[1:], stdout, stderr)
+	case "graph":
+		return runGraph(args[1:], stdout, stderr)
 	case "scan":
 		return runScan(args[1:], stdout, stderr)
 	case "symbols":
@@ -33,6 +35,7 @@ func printRootHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Available Commands:")
 	fmt.Fprintln(w, "  calls   list go function and method calls under a local path")
+	fmt.Fprintln(w, "  graph   build a depth-limited call graph from an entry symbol")
 	fmt.Fprintln(w, "  scan   scan go packages under a local path")
 	fmt.Fprintln(w, "  symbols   list go function and method symbols under a local path")
 	fmt.Fprintln(w)
