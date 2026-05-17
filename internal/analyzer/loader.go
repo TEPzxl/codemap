@@ -32,6 +32,9 @@ type AnalyzeWarning struct {
 type LoadResult struct {
 	Packages []PackageInfo    `json:"packages"`
 	Warnings []AnalyzeWarning `json:"warnings"`
+
+	rootPath       string
+	loadedPackages []*packages.Package
 }
 
 func LoadPackages(req LoadRequest) (LoadResult, error) {
@@ -65,8 +68,10 @@ func LoadPackages(req LoadRequest) (LoadResult, error) {
 
 	pkgs, loadErr := packages.Load(cfg, "./...")
 	result := LoadResult{
-		Packages: make([]PackageInfo, 0, len(pkgs)),
-		Warnings: make([]AnalyzeWarning, 0),
+		Packages:       make([]PackageInfo, 0, len(pkgs)),
+		Warnings:       make([]AnalyzeWarning, 0),
+		rootPath:       absRoot,
+		loadedPackages: pkgs,
 	}
 
 	if loadErr != nil {

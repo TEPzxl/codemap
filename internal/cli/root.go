@@ -14,6 +14,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "scan":
 		return runScan(args[1:], stdout, stderr)
+	case "symbols":
+		return runSymbols(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		printRootHelp(stderr)
@@ -29,6 +31,7 @@ func printRootHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Available Commands:")
 	fmt.Fprintln(w, "  scan   scan go packages under a local path")
+	fmt.Fprintln(w, "  symbols   list go function and method symbols under a local path")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Flags:")
 	fmt.Fprintln(w, "  -h, --help   help for codemap")
