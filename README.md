@@ -54,6 +54,14 @@ bin/codemap
 
 `go build` does not run pnpm. Run `make web-build` before `make build` when you want the binary to include the current frontend.
 
+Run the full quality gate:
+
+```bash
+make check
+```
+
+`make check` runs Go tests, CLI smoke checks against the fixture projects, frontend lint, TypeScript checks, and the Next production build.
+
 ## Quick Demo
 
 Run the layered-service demo:
@@ -128,6 +136,14 @@ Run frontend checks:
 
 ```bash
 make test-web
+```
+
+Run individual frontend gates:
+
+```bash
+make web-lint
+make web-typecheck
+make build-web
 ```
 
 Run the Go API and Next dev server separately:

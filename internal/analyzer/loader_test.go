@@ -30,6 +30,39 @@ func TestLoadPackages(t *testing.T) {
 	}
 }
 
+func TestLoadPackagesFixturesCanScan(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "simple", path: filepath.Join(repoRoot, "examples", "simple")},
+		{name: "layered service", path: filepath.Join(repoRoot, "examples", "layered-service")},
+		{name: "interface call", path: filepath.Join(repoRoot, "examples", "interface-call")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LoadPackages(LoadRequest{
+				RootPath: tt.path,
+			})
+			if err != nil {
+				t.Fatalf("LoadPackages returned error: %v", err)
+			}
+			if len(got.Packages) == 0 {
+				t.Fatal("expected at least one loaded package")
+			}
+			for _, pkg := range got.Packages {
+				for _, file := range pkg.Files {
+					if strings.HasSuffix(file, "_test.go") {
+						t.Fatalf("expected _test.go files to be excluded, got %q", file)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestLoadPackagesDefaultExcludesTests(t *testing.T) {
 	moduleDir := t.TempDir()
 	writeFile(t, filepath.Join(moduleDir, "go.mod"), "module example.com/tmpmod\n\ngo 1.25.0\n")

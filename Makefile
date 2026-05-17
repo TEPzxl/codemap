@@ -12,15 +12,19 @@ SERVER_STATIC := internal/server/static
 BIN_DIR := bin
 PNPM := corepack pnpm
 
-.PHONY: help install test test-go test-web lint-web build-web web-build build demo dev-api dev-web dev
+.PHONY: help install test check smoke test-go test-web web-lint web-typecheck lint-web build-web web-build build demo dev-api dev-web dev
 
 help:
 	@echo "codemap make targets"
 	@echo ""
 	@echo "  make install     Install frontend dependencies with pnpm"
-	@echo "  make test        Run Go tests and frontend lint/typecheck/build"
+	@echo "  make test        Run the full quality gate"
+	@echo "  make check       Run Go tests, CLI smoke, frontend lint/typecheck/build"
+	@echo "  make smoke       Run CLI smoke tests against fixture projects"
 	@echo "  make test-go     Run go test ./..."
 	@echo "  make test-web    Run frontend lint, typecheck, and build"
+	@echo "  make web-lint    Run frontend lint"
+	@echo "  make web-typecheck  Run frontend TypeScript check"
 	@echo "  make web-build   Build Next static export and stage assets for Go embed"
 	@echo "  make build       Build Go binary into ./bin/codemap"
 	@echo "  make demo        Run ./bin/codemap serve with the demo fixture"
@@ -36,21 +40,31 @@ help:
 install:
 	cd $(WEB_DIR) && $(PNPM) install
 
-test: test-go test-web
+test: check
+
+check: test-go smoke web-lint web-typecheck build-web
+
+smoke:
+	./scripts/smoke.sh
 
 test-go:
 	go test ./...
 
-test-web: lint-web build-web
+test-web: web-lint web-typecheck build-web
 
-lint-web:
+web-lint:
 	cd $(WEB_DIR) && $(PNPM) lint
+
+web-typecheck:
 	cd $(WEB_DIR) && $(PNPM) typecheck
+
+lint-web: web-lint web-typecheck
 
 build-web:
 	cd $(WEB_DIR) && $(PNPM) build
 
 web-build: build-web
+	rm -rf $(SERVER_STATIC)
 	mkdir -p $(SERVER_STATIC)
 	cp -R $(WEB_OUT)/. $(SERVER_STATIC)/
 

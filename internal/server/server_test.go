@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tepzxl/codemap/internal/analyzer"
 	graphmodel "github.com/tepzxl/codemap/internal/graph"
 )
 
@@ -162,6 +163,60 @@ func TestAPIErrors(t *testing.T) {
 				t.Fatalf("expected json error, got %s", rr.Body.String())
 			}
 		})
+	}
+}
+
+func TestSourcePathTraversalReturnsJSONError(t *testing.T) {
+	project := &Project{
+		Root: t.TempDir(),
+		Symbols: []analyzer.Symbol{
+			{
+				ID:        "example.com/app.Escape",
+				Label:     "Escape",
+				Kind:      "function",
+				Package:   "example.com/app",
+				File:      "../outside.go",
+				StartLine: 1,
+				EndLine:   1,
+			},
+		},
+		symbolByID: map[string]analyzer.Symbol{},
+	}
+	project.symbolByID[project.Symbols[0].ID] = project.Symbols[0]
+
+	handler := NewHandler(project)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/source?node_id=example.com/app.Escape", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	decodeJSON(t, rr, &got)
+	if !strings.Contains(got.Error, "escapes project root") {
+		t.Fatalf("expected path traversal error, got %q", got.Error)
+	}
+}
+
+func TestWebUIStaticRootIsServed(t *testing.T) {
+	project := loadTestProject(t)
+	handler := NewHandler(project)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "text/html") {
+		t.Fatalf("content type = %q, want html", contentType)
+	}
+	if !strings.Contains(rr.Body.String(), "codemap") {
+		t.Fatalf("expected embedded web UI html, got %q", rr.Body.String())
 	}
 }
 
