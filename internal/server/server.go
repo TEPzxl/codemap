@@ -62,8 +62,11 @@ func NewHandler(project *Project) http.Handler {
 	mux.HandleFunc("/api/graph", project.handleGraph)
 	mux.HandleFunc("/api/source", project.handleSource)
 	mux.HandleFunc("/api/warnings", project.handleWarnings)
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		webHandler().ServeHTTP(w, r)
 	})
 	return mux
 }

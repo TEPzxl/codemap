@@ -7,9 +7,12 @@ API_PORT ?= 18080
 WEB_HOST ?= 127.0.0.1
 WEB_PORT ?= 3000
 WEB_DIR := web
+WEB_OUT := $(WEB_DIR)/out
+SERVER_STATIC := internal/server/static
+BIN_DIR := bin
 PNPM := corepack pnpm
 
-.PHONY: help install test test-go test-web lint-web build-web dev-api dev-web dev
+.PHONY: help install test test-go test-web lint-web build-web web-build build demo dev-api dev-web dev
 
 help:
 	@echo "codemap make targets"
@@ -18,6 +21,9 @@ help:
 	@echo "  make test        Run Go tests and frontend lint/typecheck/build"
 	@echo "  make test-go     Run go test ./..."
 	@echo "  make test-web    Run frontend lint, typecheck, and build"
+	@echo "  make web-build   Build Next static export and stage assets for Go embed"
+	@echo "  make build       Build Go binary into ./bin/codemap"
+	@echo "  make demo        Run ./bin/codemap serve with the demo fixture"
 	@echo "  make dev-api     Start Go API server"
 	@echo "  make dev-web     Start Next dev server"
 	@echo "  make dev         Start Go API in background, then Next dev server"
@@ -43,6 +49,17 @@ lint-web:
 
 build-web:
 	cd $(WEB_DIR) && $(PNPM) build
+
+web-build: build-web
+	mkdir -p $(SERVER_STATIC)
+	cp -R $(WEB_OUT)/. $(SERVER_STATIC)/
+
+build:
+	mkdir -p $(BIN_DIR)
+	go build -o $(BIN_DIR)/codemap ./cmd/codemap
+
+demo: build
+	./$(BIN_DIR)/codemap serve $(API_PATH) --port $(API_PORT)
 
 dev-api:
 	go run ./cmd/codemap serve $(API_PATH) --port $(API_PORT)
