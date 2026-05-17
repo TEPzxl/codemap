@@ -42,3 +42,32 @@ export interface Warning {
   file?: string;
 }
 
+export interface SymbolInfo {
+  id: string;
+  name: string;
+  label: string;
+  kind: "function" | "method";
+  package: string;
+  receiver?: string;
+  file: string;
+  start_line: number;
+  end_line: number;
+}
+
+export interface SymbolsResponse {
+  symbols: SymbolInfo[];
+  warnings: Warning[];
+}
+
+export interface WarningsResponse {
+  warnings: Warning[];
+}
+
+export interface SourceSnippet {
+  node_id: string;
+  file: string;
+  start_line: number;
+  end_line: number;
+  source: string;
+  language: string;
+}
