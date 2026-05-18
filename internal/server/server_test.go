@@ -139,6 +139,21 @@ func TestAPIHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("package graph", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/package-graph?entry=main.main&depth=5", nil)
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+		}
+		var got graphmodel.PackageGraph
+		decodeJSON(t, rr, &got)
+		requireServerPackageNode(t, got, "internal/service")
+		requireServerPackageEdge(t, got, "internal/handler", "internal/service", 2)
+		requireServerPackageEdge(t, got, "internal/service", "internal/repository", 2)
+	})
+
 	t.Run("graph upstream direction", func(t *testing.T) {
 		entry := "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser"
 		got := requestGraph(t, handler, "/api/graph?entry="+entry+"&depth=2&direction=upstream")
@@ -581,6 +596,9 @@ func TestAPIErrors(t *testing.T) {
 		{name: "invalid graph direction", path: "/api/graph?entry=main.main&direction=sideways", want: http.StatusBadRequest},
 		{name: "invalid graph bool", path: "/api/graph?entry=main.main&show_external=maybe", want: http.StatusBadRequest},
 		{name: "invalid graph node limit", path: "/api/graph?entry=main.main&node_limit=-1", want: http.StatusBadRequest},
+		{name: "invalid package graph entry", path: "/api/package-graph?entry=not.exists&depth=5", want: http.StatusBadRequest},
+		{name: "invalid package graph depth", path: "/api/package-graph?depth=-1", want: http.StatusBadRequest},
+		{name: "invalid package graph bool", path: "/api/package-graph?show_external=maybe", want: http.StatusBadRequest},
 		{name: "missing path from", path: "/api/path?to=UserRepository.Save", want: http.StatusBadRequest},
 		{name: "unknown path from", path: "/api/path?from=not.exists&to=UserRepository.Save", want: http.StatusBadRequest},
 		{name: "invalid path max depth", path: "/api/path?from=main.main&to=UserRepository.Save&max_depth=-1", want: http.StatusBadRequest},
@@ -864,6 +882,31 @@ func requireServerGraphWarning(t *testing.T, output graphmodel.Graph, code strin
 		}
 	}
 	t.Fatalf("missing graph warning %q in %#v", code, output.Warnings)
+}
+
+func requireServerPackageNode(t *testing.T, output graphmodel.PackageGraph, id string) {
+	t.Helper()
+
+	for _, node := range output.Nodes {
+		if node.ID == id {
+			return
+		}
+	}
+	t.Fatalf("missing package node %q in %#v", id, output.Nodes)
+}
+
+func requireServerPackageEdge(t *testing.T, output graphmodel.PackageGraph, from string, to string, calls int) {
+	t.Helper()
+
+	for _, edge := range output.Edges {
+		if edge.From == from && edge.To == to {
+			if edge.Calls != calls {
+				t.Fatalf("package edge %q -> %q calls = %d, want %d", from, to, edge.Calls, calls)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing package edge %q -> %q in %#v", from, to, output.Edges)
 }
 
 func graphsEqual(a graphmodel.Graph, b graphmodel.Graph) bool {

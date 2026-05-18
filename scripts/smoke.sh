@@ -46,6 +46,9 @@ func main() {
 		requireString(payload, "entry")
 		requireArray(payload, "nodes")
 		requireArray(payload, "edges")
+	case "packages":
+		requireArray(payload, "nodes")
+		requireArray(payload, "edges")
 	default:
 		fmt.Fprintf(os.Stderr, "unknown mode: %s\n", mode)
 		os.Exit(2)
@@ -90,3 +93,4 @@ run_json scan interface-call-scan scan ./examples/interface-call
 run_json symbols simple-symbols symbols ./examples/simple
 run_json calls simple-calls calls ./examples/simple
 run_json graph layered-service-graph graph ./examples/layered-service --entry main.main --depth 5
+run_json packages layered-service-packages packages ./examples/layered-service --entry main.main --depth 5

@@ -2,6 +2,7 @@ import type {
   CallsiteSnippet,
   Graph,
   GraphDirection,
+  PackageGraph,
   PathResult,
   ProjectMeta,
   RescanResponse,
@@ -26,6 +27,17 @@ export interface PathRequest {
   to: string;
   maxDepth: number;
   limit: number;
+  showExternal?: boolean;
+  showUnresolved?: boolean;
+  showInterface?: boolean;
+  expandInterface?: boolean;
+  packagePrefix?: string;
+}
+
+export interface PackageGraphRequest {
+  entry?: string;
+  depth: number;
+  direction?: GraphDirection;
   showExternal?: boolean;
   showUnresolved?: boolean;
   showInterface?: boolean;
@@ -100,6 +112,36 @@ function graphParams(options: GraphRequest): URLSearchParams {
 
 export function fetchGraph(options: GraphRequest): Promise<Graph> {
   return requestJSON<Graph>(graphURL(options));
+}
+
+export function packageGraphURL(options: PackageGraphRequest): string {
+  const params = new URLSearchParams({
+    depth: String(options.depth),
+    direction: options.direction ?? "downstream",
+  });
+  if (options.entry) {
+    params.set("entry", options.entry);
+  }
+  if (options.showExternal) {
+    params.set("show_external", "true");
+  }
+  if (options.showUnresolved) {
+    params.set("show_unresolved", "true");
+  }
+  if (options.showInterface) {
+    params.set("show_interface", "true");
+  }
+  if (options.expandInterface) {
+    params.set("expand_interface", "true");
+  }
+  if (options.packagePrefix) {
+    params.set("package", options.packagePrefix);
+  }
+  return `/api/package-graph?${params.toString()}`;
+}
+
+export function fetchPackageGraph(options: PackageGraphRequest): Promise<PackageGraph> {
+  return requestJSON<PackageGraph>(packageGraphURL(options));
 }
 
 export function pathURL(options: PathRequest): string {

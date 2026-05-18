@@ -70,6 +70,24 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, graph)
 }
 
+func (p *Project) handlePackageGraph(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+
+	options, ok := parsePackageGraphOptions(w, r)
+	if !ok {
+		return
+	}
+
+	graph, err := p.BuildPackageGraph(options)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, graph)
+}
+
 func (p *Project) handlePath(w http.ResponseWriter, r *http.Request) {
 	if !requireGET(w, r) {
 		return
@@ -151,6 +169,61 @@ func parseGraphOptions(w http.ResponseWriter, r *http.Request, requireEntry bool
 		ExpandInterface: expandInterface,
 		PackagePrefixes: query["package"],
 		NodeLimit:       nodeLimit,
+	}, true
+}
+
+func parsePackageGraphOptions(w http.ResponseWriter, r *http.Request) (graphmodel.PackageGraphOptions, bool) {
+	query := r.URL.Query()
+
+	depth := 5
+	if rawDepth := query.Get("depth"); rawDepth != "" {
+		parsed, err := strconv.Atoi(rawDepth)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "depth must be a non-negative integer")
+			return graphmodel.PackageGraphOptions{}, false
+		}
+		depth = parsed
+	}
+
+	showExternal, ok := parseBoolQuery(w, query.Get("show_external"), "show_external")
+	if !ok {
+		return graphmodel.PackageGraphOptions{}, false
+	}
+	showUnresolved, ok := parseBoolQuery(w, query.Get("show_unresolved"), "show_unresolved")
+	if !ok {
+		return graphmodel.PackageGraphOptions{}, false
+	}
+	showInterface, ok := parseBoolQuery(w, query.Get("show_interface"), "show_interface")
+	if !ok {
+		return graphmodel.PackageGraphOptions{}, false
+	}
+	expandInterface, ok := parseBoolQuery(w, query.Get("expand_interface"), "expand_interface")
+	if !ok {
+		return graphmodel.PackageGraphOptions{}, false
+	}
+	showSelf, ok := parseBoolQuery(w, query.Get("show_self"), "show_self")
+	if !ok {
+		return graphmodel.PackageGraphOptions{}, false
+	}
+
+	direction := graphmodel.Direction(query.Get("direction"))
+	if !direction.IsValid() {
+		writeError(w, http.StatusBadRequest, "direction must be one of downstream, upstream, both")
+		return graphmodel.PackageGraphOptions{}, false
+	}
+
+	return graphmodel.PackageGraphOptions{
+		BuildOptions: graphmodel.BuildOptions{
+			Entry:           query.Get("entry"),
+			Depth:           depth,
+			Direction:       direction.Normalized(),
+			ShowExternal:    showExternal,
+			ShowUnresolved:  showUnresolved,
+			ShowInterface:   showInterface,
+			ExpandInterface: expandInterface,
+			PackagePrefixes: query["package"],
+		},
+		IncludeSelfEdges: showSelf,
 	}, true
 }
 

@@ -11,6 +11,27 @@ export interface Graph {
   warnings: Warning[];
 }
 
+export interface PackageGraph {
+  nodes: PackageNode[];
+  edges: PackageEdge[];
+  warnings: Warning[];
+}
+
+export interface PackageNode {
+  id: string;
+  package: string;
+  full_package?: string;
+  symbols: number;
+  calls: number;
+}
+
+export interface PackageEdge {
+  id: string;
+  from: string;
+  to: string;
+  calls: number;
+}
+
 export interface PathResult {
   from: string;
   to: string;

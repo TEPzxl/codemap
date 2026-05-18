@@ -109,9 +109,11 @@ http://localhost:8080
 7. 选中任意节点后使用 `Focus downstream`、`Focus upstream` 或 `Focus neighborhood` 聚焦子图。
 8. 使用 `Reset to entry` 回到原始入口图。
 9. 使用 `Path search` 查询两个 symbols 之间的调用路径，结果会切换为 path graph。
-10. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
-11. 点击 `Copy view URL` 复制当前视图链接。
-12. 修改本地源码后点击 `Rescan` 刷新索引。
+10. 切换到 `Package graph` 查看 package-level call overview，并点击 package 节点设置 package filter。
+11. 双击 package 节点切回 function graph 并按该 package 过滤。
+12. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
+13. 点击 `Copy view URL` 复制当前视图链接。
+14. 修改本地源码后点击 `Rescan` 刷新索引。
 
 更多说明见：[docs/demo/README.md](docs/demo/README.md)。
 
@@ -168,6 +170,13 @@ go run ./cmd/codemap graph ./examples/layered-service --entry 'github.com/tepzxl
 
 ```bash
 go run ./cmd/codemap path ./examples/layered-service --from main.main --to UserRepository.Save --max-depth 8 --limit 5
+```
+
+查看 package-level call overview：
+
+```bash
+go run ./cmd/codemap packages ./examples/layered-service
+go run ./cmd/codemap packages ./examples/layered-service --entry main.main --depth 5
 ```
 
 显示 external calls：
@@ -250,6 +259,13 @@ Path search：
 
 ```bash
 curl -s "http://localhost:8080/api/path?from=main.main&to=UserRepository.Save&max_depth=8&limit=5"
+```
+
+Package graph：
+
+```bash
+curl -s "http://localhost:8080/api/package-graph"
+curl -s "http://localhost:8080/api/package-graph?entry=main.main&depth=5"
 ```
 
 带过滤条件的 Graph：

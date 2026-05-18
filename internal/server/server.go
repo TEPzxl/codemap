@@ -106,6 +106,7 @@ func NewHandler(project *Project) http.Handler {
 	mux.HandleFunc("/api/rescan", project.handleRescan)
 	mux.HandleFunc("/api/symbols", project.handleSymbols)
 	mux.HandleFunc("/api/graph", project.handleGraph)
+	mux.HandleFunc("/api/package-graph", project.handlePackageGraph)
 	mux.HandleFunc("/api/path", project.handlePath)
 	mux.HandleFunc("/api/source", project.handleSource)
 	mux.HandleFunc("/api/callsite", project.handleCallsite)
@@ -160,6 +161,18 @@ func (p *Project) BuildGraph(options graphmodel.BuildOptions) (graphmodel.Graph,
 		calls = p.ExpandedCalls
 	}
 	return graphmodel.BuildGraph(toGraphSymbols(p.Symbols), toGraphCalls(calls), options)
+}
+
+func (p *Project) BuildPackageGraph(options graphmodel.PackageGraphOptions) (graphmodel.PackageGraph, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	calls := p.Calls
+	if options.ExpandInterface {
+		calls = p.ExpandedCalls
+	}
+	options.ModulePath = p.Module
+	options.Warnings = append(options.Warnings, toGraphWarnings(p.Warnings)...)
+	return graphmodel.BuildPackageGraph(toGraphSymbols(p.Symbols), toGraphCalls(calls), options)
 }
 
 func (p *Project) FindPaths(options graphmodel.PathOptions) (graphmodel.PathResult, error) {
@@ -259,6 +272,18 @@ func toGraphCalls(calls []analyzer.Call) []graphmodel.Call {
 			Resolution: call.Resolution,
 			Callsite:   call.Callsite,
 			Candidate:  call.Candidate,
+		})
+	}
+	return result
+}
+
+func toGraphWarnings(warnings []analyzer.AnalyzeWarning) []graphmodel.Warning {
+	result := make([]graphmodel.Warning, 0, len(warnings))
+	for _, warning := range warnings {
+		result = append(result, graphmodel.Warning{
+			Code:    warning.Code,
+			Message: warning.Message,
+			File:    warning.PackageID,
 		})
 	}
 	return result

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
+import { GraphModeToggle, type GraphMode } from "@/components/GraphModeToggle";
 import { GraphView } from "@/components/GraphView";
+import { PackageGraphView } from "@/components/PackageGraphView";
 import { PathSearchPanel } from "@/components/PathSearchPanel";
 import { ProjectMetaPanel } from "@/components/ProjectMetaPanel";
 import { SourcePanel } from "@/components/SourcePanel";
@@ -14,17 +16,31 @@ import {
   fetchCallsite,
   fetchGraph,
   fetchMeta,
+  fetchPackageGraph,
   fetchPath,
   fetchSource,
   fetchSymbols,
   fetchWarnings,
   rescanProject,
   type GraphRequest,
+  type PackageGraphRequest,
 } from "@/lib/api";
 import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
 import { summarizeGraph } from "@/lib/graphSummary";
 import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
-import type { Edge as GraphEdge, Graph, GraphDirection, Node as GraphNode, PathResult, ProjectMeta, SourceView, SymbolInfo, Warning } from "@/types/graph";
+import type {
+  Edge as GraphEdge,
+  Graph,
+  GraphDirection,
+  Node as GraphNode,
+  PackageGraph,
+  PackageNode,
+  PathResult,
+  ProjectMeta,
+  SourceView,
+  SymbolInfo,
+  Warning,
+} from "@/types/graph";
 
 export default function Home() {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
@@ -37,7 +53,9 @@ export default function Home() {
   const [showUnresolved, setShowUnresolved] = useState(false);
   const [showInterface, setShowInterface] = useState(false);
   const [expandInterface, setExpandInterface] = useState(false);
+  const [graphMode, setGraphMode] = useState<GraphMode>("function");
   const [graph, setGraph] = useState<Graph | null>(null);
+  const [packageGraph, setPackageGraph] = useState<PackageGraph | null>(null);
   const [loadedGraphRequest, setLoadedGraphRequest] = useState<GraphRequest | null>(null);
   const [pathFrom, setPathFrom] = useState("main.main");
   const [pathTo, setPathTo] = useState("");
@@ -47,6 +65,7 @@ export default function Home() {
   const [selectedPathIndex, setSelectedPathIndex] = useState(0);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null);
+  const [selectedPackageID, setSelectedPackageID] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<Warning[]>([]);
   const [meta, setMeta] = useState<ProjectMeta | null>(null);
   const [source, setSource] = useState<SourceView | null>(null);
@@ -149,6 +168,20 @@ export default function Home() {
     [depth, direction, entry, expandInterface, packageFilter, showExternal, showInterface, showUnresolved],
   );
 
+  const buildPackageGraphRequest = useCallback(
+    (entryOverride?: string): PackageGraphRequest => ({
+      entry: entryOverride ?? entry,
+      depth,
+      direction,
+      showExternal,
+      showUnresolved,
+      showInterface,
+      expandInterface,
+      packagePrefix: packageFilter || undefined,
+    }),
+    [depth, direction, entry, expandInterface, packageFilter, showExternal, showInterface, showUnresolved],
+  );
+
   useEffect(() => {
     selectedNodeRef.current = selectedNode;
   }, [selectedNode]);
@@ -236,15 +269,74 @@ export default function Home() {
     [buildGraphRequest, loadGraphRequest],
   );
 
+  const loadPackageGraphRequest = useCallback(
+    async (request: PackageGraphRequest) => {
+      const requestID = requestSeqRef.current + 1;
+      requestSeqRef.current = requestID;
+      const urlRequest: GraphRequest = {
+        entry: request.entry ?? entry,
+        depth: request.depth,
+        direction: request.direction,
+        showExternal: request.showExternal,
+        showUnresolved: request.showUnresolved,
+        showInterface: request.showInterface,
+        expandInterface: request.expandInterface,
+        packagePrefix: request.packagePrefix,
+      };
+
+      setGraphLoading(true);
+      setGraphError(null);
+      setSource(null);
+      setSourceError(null);
+      setSelectedNode(null);
+      selectedEdgeRef.current = null;
+      setSelectedEdgeID(null);
+      try {
+        graphRequestRef.current = urlRequest;
+        writeURLState(urlRequest);
+        const nextGraph = await fetchPackageGraph(request);
+        if (requestSeqRef.current !== requestID) {
+          return;
+        }
+        graphLoadedRef.current = true;
+        graphRequestRef.current = urlRequest;
+        setLoadedGraphRequest(urlRequest);
+        setPackageGraph(nextGraph);
+        setWarnings((current) => mergeWarnings(current, nextGraph.warnings));
+        setPathResult(null);
+      } catch (error) {
+        if (requestSeqRef.current === requestID) {
+          setGraphError(error instanceof Error ? error.message : "Failed to load package graph");
+        }
+      } finally {
+        if (requestSeqRef.current === requestID) {
+          setGraphLoading(false);
+        }
+      }
+    },
+    [entry],
+  );
+
+  const loadPackageGraph = useCallback(
+    async (entryOverride?: string) => {
+      await loadPackageGraphRequest(buildPackageGraphRequest(entryOverride));
+    },
+    [buildPackageGraphRequest, loadPackageGraphRequest],
+  );
+
   useEffect(() => {
     if (!graphLoadedRef.current) {
       return;
     }
     const timeout = window.setTimeout(() => {
-      void loadGraph({ preserveSelection: true });
+      if (graphMode === "package") {
+        void loadPackageGraph();
+      } else {
+        void loadGraph({ preserveSelection: true });
+      }
     }, 350);
     return () => window.clearTimeout(timeout);
-  }, [depth, direction, expandInterface, loadGraph, packageFilter, showExternal, showInterface, showUnresolved]);
+  }, [depth, direction, expandInterface, graphMode, loadGraph, loadPackageGraph, packageFilter, showExternal, showInterface, showUnresolved]);
 
   useEffect(() => {
     if (symbolsLoading || graphLoadedRef.current) {
@@ -259,6 +351,7 @@ export default function Home() {
   }, [loadGraphRequest, symbolsLoading]);
 
   function selectSymbol(symbolID: string) {
+    setGraphMode("function");
     setEntry(symbolID);
     setRootEntry(symbolID);
     setPathFrom(symbolID);
@@ -267,6 +360,7 @@ export default function Home() {
   }
 
   function manuallyLoadGraph() {
+    setGraphMode("function");
     const resolvedEntry = resolveEntryInput(entry, symbols, modulePrefix);
     if (resolvedEntry !== entry) {
       setEntry(resolvedEntry);
@@ -278,6 +372,7 @@ export default function Home() {
   }
 
   async function findPath() {
+    setGraphMode("function");
     const resolvedFrom = resolveEntryInput(pathFrom, symbols, modulePrefix);
     const resolvedTo = resolveEntryInput(pathTo, symbols, modulePrefix);
     setPathFrom(resolvedFrom);
@@ -345,12 +440,14 @@ export default function Home() {
   }
 
   function focusNode(node: GraphNode, nextDirection: GraphDirection) {
+    setGraphMode("function");
     setEntry(node.id);
     setDirection(nextDirection);
     void loadGraphRequest({ ...buildGraphRequest(node.id), direction: nextDirection }, { preserveSelection: true });
   }
 
   function resetToEntry() {
+    setGraphMode("function");
     setEntry(rootEntry);
     setDirection("downstream");
     void loadGraphRequest({ ...buildGraphRequest(rootEntry), direction: "downstream" }, { preserveSelection: true });
@@ -364,7 +461,11 @@ export default function Home() {
       setMeta(response.meta);
       await loadProjectIndex(false);
       if (graphLoadedRef.current) {
-        await loadGraph({ preserveSelection: true });
+        if (graphMode === "package") {
+          await loadPackageGraph();
+        } else {
+          await loadGraph({ preserveSelection: true });
+        }
       }
     } catch (error) {
       setRescanError(error instanceof Error ? error.message : "Failed to rescan project");
@@ -422,6 +523,26 @@ export default function Home() {
     window.setTimeout(() => setCopyStatus(null), 2000);
   }
 
+  function changeGraphMode(nextMode: GraphMode) {
+    setGraphMode(nextMode);
+    if (!graphLoadedRef.current && nextMode === "package") {
+      void loadPackageGraph();
+    }
+  }
+
+  function selectPackage(node: PackageNode) {
+    setSelectedPackageID(node.id);
+    setPackageFilter(packageFilterValue(node));
+  }
+
+  function openPackage(node: PackageNode) {
+    const prefix = packageFilterValue(node);
+    setSelectedPackageID(node.id);
+    setPackageFilter(prefix);
+    setGraphMode("function");
+    void loadGraphRequest({ ...buildGraphRequest(), packagePrefix: prefix });
+  }
+
   const visibleGraphRequest = loadedGraphRequest ?? buildGraphRequest();
 
   return (
@@ -446,6 +567,7 @@ export default function Home() {
         {!sidebarCollapsed ? (
           <aside className="grid min-h-0 min-w-0 content-start gap-5 overflow-y-auto overflow-x-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
             <ProjectMetaPanel meta={meta} loading={rescanLoading} error={rescanError} onRescan={handleRescan} />
+            <GraphModeToggle mode={graphMode} onChange={changeGraphMode} />
             <GraphSummaryPanel
               entry={graph?.entry ?? visibleGraphRequest.entry}
               request={visibleGraphRequest}
@@ -516,17 +638,29 @@ export default function Home() {
           >
             {sidebarCollapsed ? ">" : "<"}
           </button>
-          <GraphView
-            key={sidebarCollapsed ? "graph-collapsed" : "graph-expanded"}
-            graph={graph}
-            selectedNode={selectedNode}
-            selectedEdgeID={selectedEdgeID}
-            modulePrefix={modulePrefix}
-            loading={graphLoading}
-            error={graphError}
-            onNodeSelect={loadSource}
-            onEdgeSelect={loadCallsite}
-          />
+          {graphMode === "package" ? (
+            <PackageGraphView
+              key={sidebarCollapsed ? "package-graph-collapsed" : "package-graph-expanded"}
+              graph={packageGraph}
+              selectedPackageID={selectedPackageID}
+              loading={graphLoading}
+              error={graphError}
+              onPackageSelect={selectPackage}
+              onPackageOpen={openPackage}
+            />
+          ) : (
+            <GraphView
+              key={sidebarCollapsed ? "graph-collapsed" : "graph-expanded"}
+              graph={graph}
+              selectedNode={selectedNode}
+              selectedEdgeID={selectedEdgeID}
+              modulePrefix={modulePrefix}
+              loading={graphLoading}
+              error={graphError}
+              onNodeSelect={loadSource}
+              onEdgeSelect={loadCallsite}
+            />
+          )}
         </section>
       </section>
 
@@ -559,6 +693,10 @@ function sameEdge(left: GraphEdge, right: GraphEdge): boolean {
     left.callsite.line === right.callsite.line &&
     left.callsite.column === right.callsite.column
   );
+}
+
+function packageFilterValue(node: PackageNode): string {
+  return node.full_package || node.package;
 }
 
 function resolveEntryInput(value: string, symbols: SymbolInfo[], modulePrefix: string): string {
