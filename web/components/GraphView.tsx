@@ -21,18 +21,29 @@ import "@xyflow/react/dist/style.css";
 import { layoutGraph } from "@/lib/layoutGraph";
 import type { PositionedNode } from "@/lib/layoutGraph";
 import { displayPackage, displaySymbolID } from "@/lib/displaySymbol";
-import type { Graph, Node as GraphNode } from "@/types/graph";
+import type { Edge as GraphEdge, Graph, Node as GraphNode } from "@/types/graph";
 
 interface GraphViewProps {
   graph: Graph | null;
   selectedNode: GraphNode | null;
+  selectedEdgeID: string | null;
   modulePrefix: string;
   loading?: boolean;
   error?: string | null;
   onNodeSelect: (node: GraphNode) => void;
+  onEdgeSelect: (edge: GraphEdge) => void;
 }
 
-export function GraphView({ graph, selectedNode, modulePrefix, loading, error, onNodeSelect }: GraphViewProps) {
+export function GraphView({
+  graph,
+  selectedNode,
+  selectedEdgeID,
+  modulePrefix,
+  loading,
+  error,
+  onNodeSelect,
+  onEdgeSelect,
+}: GraphViewProps) {
   if (loading) {
     return <GraphState message="Loading graph" />;
   }
@@ -45,7 +56,14 @@ export function GraphView({ graph, selectedNode, modulePrefix, loading, error, o
 
   return (
     <ReactFlowProvider>
-      <GraphCanvas graph={graph} selectedNode={selectedNode} modulePrefix={modulePrefix} onNodeSelect={onNodeSelect} />
+      <GraphCanvas
+        graph={graph}
+        selectedNode={selectedNode}
+        selectedEdgeID={selectedEdgeID}
+        modulePrefix={modulePrefix}
+        onNodeSelect={onNodeSelect}
+        onEdgeSelect={onEdgeSelect}
+      />
     </ReactFlowProvider>
   );
 }
@@ -53,19 +71,24 @@ export function GraphView({ graph, selectedNode, modulePrefix, loading, error, o
 function GraphCanvas({
   graph,
   selectedNode,
+  selectedEdgeID,
   modulePrefix,
   onNodeSelect,
+  onEdgeSelect,
 }: {
   graph: Graph;
   selectedNode: GraphNode | null;
+  selectedEdgeID: string | null;
   modulePrefix: string;
   onNodeSelect: (node: GraphNode) => void;
+  onEdgeSelect: (edge: GraphEdge) => void;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>([]);
   const { fitView } = useReactFlow();
 
   const nodeByID = useMemo(() => new Map(graph?.nodes.map((node) => [node.id, node]) ?? []), [graph]);
+  const edgeByID = useMemo(() => new Map(graph.edges.map((edge) => [edge.id, edge])), [graph]);
   const connectedEdgeIDs = useMemo(() => {
     if (!graph || !selectedNode) {
       return new Set<string>();
@@ -83,8 +106,8 @@ function GraphCanvas({
     }
     const positioned = layoutGraph(graph);
     setNodes(positioned.map((node) => toFlowNode(node, selectedNode?.id === node.id)));
-    setEdges(graph.edges.map((edge) => toFlowEdge(edge, connectedEdgeIDs.has(edge.id))));
-  }, [connectedEdgeIDs, graph, selectedNode, setEdges, setNodes]);
+    setEdges(graph.edges.map((edge) => toFlowEdge(edge, connectedEdgeIDs.has(edge.id), selectedEdgeID === edge.id)));
+  }, [connectedEdgeIDs, graph, selectedEdgeID, selectedNode, setEdges, setNodes]);
 
   useEffect(() => {
     applyLayout();
@@ -114,6 +137,13 @@ function GraphCanvas({
           const node = nodeByID.get(flowNode.id);
           if (node) {
             onNodeSelect(node);
+          }
+        }}
+        onEdgeClick={(event, flowEdge) => {
+          event.stopPropagation();
+          const edge = edgeByID.get(flowEdge.id);
+          if (edge) {
+            onEdgeSelect(edge);
           }
         }}
       >
@@ -198,29 +228,30 @@ function kindBadgeClass(node: GraphNode): string {
   return "rounded bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-blue-700";
 }
 
-function toFlowEdge(edge: Graph["edges"][number], highlighted: boolean): FlowEdge {
+function toFlowEdge(edge: Graph["edges"][number], highlighted: boolean, selected: boolean): FlowEdge {
   const stroke = edgeStroke(edge.resolution);
+  const active = highlighted || selected;
   return {
     id: edge.id,
     source: edge.from,
     target: edge.to,
     type: "smoothstep",
-    animated: edge.resolution === "interface" || edge.resolution === "unresolved" || highlighted,
+    animated: edge.resolution === "interface" || edge.resolution === "unresolved" || active,
     label: edge.candidate ? "candidate" : edge.resolution,
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: stroke,
+      color: selected ? "#1f2933" : stroke,
       width: 16,
       height: 16,
     },
     style: {
-      stroke,
-      strokeWidth: highlighted ? 3 : 1.6,
+      stroke: selected ? "#1f2933" : stroke,
+      strokeWidth: selected ? 3.4 : active ? 3 : 1.6,
       strokeDasharray: edge.candidate || edge.resolution === "interface" ? "6 4" : undefined,
-      opacity: highlighted ? 1 : 0.78,
+      opacity: active ? 1 : 0.78,
     },
     labelStyle: {
-      fill: highlighted ? "#1f2933" : "#52616b",
+      fill: active ? "#1f2933" : "#52616b",
       fontSize: 11,
       fontWeight: 700,
     },

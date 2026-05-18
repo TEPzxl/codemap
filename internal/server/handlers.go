@@ -35,11 +35,28 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	options, ok := parseGraphOptions(w, r, true)
+	if !ok {
+		return
+	}
+
+	graph, err := p.BuildGraph(options)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, graph)
+}
+
+func parseGraphOptions(w http.ResponseWriter, r *http.Request, requireEntry bool) (graphmodel.BuildOptions, bool) {
 	query := r.URL.Query()
 	entry := query.Get("entry")
 	if entry == "" {
-		writeError(w, http.StatusBadRequest, "entry is required")
-		return
+		if requireEntry {
+			writeError(w, http.StatusBadRequest, "entry is required")
+			return graphmodel.BuildOptions{}, false
+		}
+		entry = "main.main"
 	}
 
 	depth := 5
@@ -47,26 +64,26 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 		parsed, err := strconv.Atoi(rawDepth)
 		if err != nil || parsed < 0 {
 			writeError(w, http.StatusBadRequest, "depth must be a non-negative integer")
-			return
+			return graphmodel.BuildOptions{}, false
 		}
 		depth = parsed
 	}
 
 	showExternal, ok := parseBoolQuery(w, query.Get("show_external"), "show_external")
 	if !ok {
-		return
+		return graphmodel.BuildOptions{}, false
 	}
 	showUnresolved, ok := parseBoolQuery(w, query.Get("show_unresolved"), "show_unresolved")
 	if !ok {
-		return
+		return graphmodel.BuildOptions{}, false
 	}
 	showInterface, ok := parseBoolQuery(w, query.Get("show_interface"), "show_interface")
 	if !ok {
-		return
+		return graphmodel.BuildOptions{}, false
 	}
 	expandInterface, ok := parseBoolQuery(w, query.Get("expand_interface"), "expand_interface")
 	if !ok {
-		return
+		return graphmodel.BuildOptions{}, false
 	}
 
 	nodeLimit := 0
@@ -74,12 +91,12 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 		parsed, err := strconv.Atoi(rawNodeLimit)
 		if err != nil || parsed < 0 {
 			writeError(w, http.StatusBadRequest, "node_limit must be a non-negative integer")
-			return
+			return graphmodel.BuildOptions{}, false
 		}
 		nodeLimit = parsed
 	}
 
-	graph, err := p.BuildGraph(graphmodel.BuildOptions{
+	return graphmodel.BuildOptions{
 		Entry:           entry,
 		Depth:           depth,
 		ShowExternal:    showExternal,
@@ -88,12 +105,7 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 		ExpandInterface: expandInterface,
 		PackagePrefixes: query["package"],
 		NodeLimit:       nodeLimit,
-	})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, graph)
+	}, true
 }
 
 func parseBoolQuery(w http.ResponseWriter, raw string, name string) (bool, bool) {
@@ -136,6 +148,50 @@ func (p *Project) handleSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snippet)
+}
+
+func (p *Project) handleCallsite(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+
+	edgeID := r.URL.Query().Get("edge_id")
+	if edgeID == "" {
+		writeError(w, http.StatusBadRequest, "edge_id is required")
+		return
+	}
+
+	options, ok := parseGraphOptions(w, r, false)
+	if !ok {
+		return
+	}
+	graph, err := p.BuildGraph(options)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	for _, edge := range graph.Edges {
+		if edge.ID != edgeID {
+			continue
+		}
+		snippet, err := source.ReadCallsite(p.Root, source.CallsiteLocation{
+			EdgeID:        edge.ID,
+			File:          edge.Callsite.File,
+			Line:          edge.Callsite.Line,
+			Column:        edge.Callsite.Column,
+			ContextBefore: 3,
+			ContextAfter:  3,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, snippet)
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "edge_id not found")
 }
 
 func (p *Project) handleWarnings(w http.ResponseWriter, r *http.Request) {

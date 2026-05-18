@@ -72,3 +72,25 @@ export interface SourceSnippet {
   source: string;
   language: string;
 }
+
+export interface CallsiteSnippet {
+  edge_id: string;
+  file: string;
+  line: number;
+  column: number;
+  start_line: number;
+  end_line: number;
+  source: string;
+  highlight_line: number;
+  language: string;
+}
+
+export type SourceView =
+  | {
+      mode: "node";
+      data: SourceSnippet;
+    }
+  | {
+      mode: "callsite";
+      data: CallsiteSnippet;
+    };

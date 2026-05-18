@@ -112,6 +112,52 @@ func TestAPIHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("callsite", func(t *testing.T) {
+		graph := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5")
+		edge := findServerGraphEdge(t, graph,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save",
+		)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/callsite?entry=main.main&depth=5&edge_id="+edge.ID, nil)
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+		}
+		var got struct {
+			EdgeID        string `json:"edge_id"`
+			File          string `json:"file"`
+			Line          int    `json:"line"`
+			Column        int    `json:"column"`
+			StartLine     int    `json:"start_line"`
+			EndLine       int    `json:"end_line"`
+			Source        string `json:"source"`
+			HighlightLine int    `json:"highlight_line"`
+			Language      string `json:"language"`
+		}
+		decodeJSON(t, rr, &got)
+		if got.EdgeID != edge.ID {
+			t.Fatalf("edge id mismatch: got %q want %q", got.EdgeID, edge.ID)
+		}
+		if got.File != "internal/service/user.go" {
+			t.Fatalf("file mismatch: got %q", got.File)
+		}
+		if got.Line != edge.Callsite.Line || got.Column != edge.Callsite.Column || got.HighlightLine != edge.Callsite.Line {
+			t.Fatalf("callsite mismatch: got line=%d column=%d highlight=%d, edge=%#v", got.Line, got.Column, got.HighlightLine, edge.Callsite)
+		}
+		if got.StartLine > got.Line || got.EndLine < got.Line {
+			t.Fatalf("line range %d-%d does not contain callsite line %d", got.StartLine, got.EndLine, got.Line)
+		}
+		if !strings.Contains(got.Source, "s.repo.Save") {
+			t.Fatalf("callsite source mismatch: %q", got.Source)
+		}
+		if got.Language != "go" {
+			t.Fatalf("language mismatch: got %q", got.Language)
+		}
+	})
+
 	t.Run("warnings", func(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/warnings", nil)
@@ -290,6 +336,9 @@ func TestAPIErrors(t *testing.T) {
 		{name: "invalid graph node limit", path: "/api/graph?entry=main.main&node_limit=-1", want: http.StatusBadRequest},
 		{name: "package filter removes all nodes", path: "/api/graph?entry=main.main&package=example.com/no-match", want: http.StatusBadRequest},
 		{name: "missing graph entry", path: "/api/graph?depth=5", want: http.StatusBadRequest},
+		{name: "missing callsite edge", path: "/api/callsite?entry=main.main&depth=5", want: http.StatusBadRequest},
+		{name: "unknown callsite edge", path: "/api/callsite?entry=main.main&depth=5&edge_id=edge-missing", want: http.StatusNotFound},
+		{name: "invalid callsite bool", path: "/api/callsite?entry=main.main&edge_id=edge-000001&show_external=maybe", want: http.StatusBadRequest},
 		{name: "unknown endpoint", path: "/api/not-found", want: http.StatusNotFound},
 	}
 
@@ -334,6 +383,57 @@ func TestSourcePathTraversalReturnsJSONError(t *testing.T) {
 	handler := NewHandler(project)
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/source?node_id=example.com/app.Escape", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	decodeJSON(t, rr, &got)
+	if !strings.Contains(got.Error, "escapes project root") {
+		t.Fatalf("expected path traversal error, got %q", got.Error)
+	}
+}
+
+func TestCallsitePathTraversalReturnsJSONError(t *testing.T) {
+	project := &Project{
+		Root: t.TempDir(),
+		Symbols: []analyzer.Symbol{
+			{
+				ID:        "example.com/app.main",
+				Label:     "main",
+				Kind:      analyzer.SymbolKindFunction,
+				Package:   "example.com/app",
+				File:      "main.go",
+				StartLine: 1,
+				EndLine:   3,
+			},
+			{
+				ID:        "example.com/app.helper",
+				Label:     "helper",
+				Kind:      analyzer.SymbolKindFunction,
+				Package:   "example.com/app",
+				File:      "helper.go",
+				StartLine: 1,
+				EndLine:   3,
+			},
+		},
+		Calls: []analyzer.Call{
+			{
+				From:       "example.com/app.main",
+				To:         "example.com/app.helper",
+				Kind:       analyzer.CallKind,
+				Resolution: graphmodel.EdgeResolutionResolved,
+				Callsite:   graphmodel.Callsite{File: "../outside.go", Line: 2, Column: 2},
+			},
+		},
+	}
+
+	handler := NewHandler(project)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/callsite?entry=main.main&depth=5&edge_id=edge-000001", nil)
 	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -451,6 +551,18 @@ func requireServerGraphEdge(t *testing.T, output graphmodel.Graph, from string, 
 		}
 	}
 	t.Fatalf("missing graph edge from %q to %q resolution %q candidate %t in %#v", from, to, resolution, candidate, output.Edges)
+}
+
+func findServerGraphEdge(t *testing.T, output graphmodel.Graph, from string, to string) graphmodel.Edge {
+	t.Helper()
+
+	for _, edge := range output.Edges {
+		if edge.From == from && edge.To == to {
+			return edge
+		}
+	}
+	t.Fatalf("missing graph edge from %q to %q in %#v", from, to, output.Edges)
+	return graphmodel.Edge{}
 }
 
 func forbidServerGraphEdge(t *testing.T, output graphmodel.Graph, from string, to string) {

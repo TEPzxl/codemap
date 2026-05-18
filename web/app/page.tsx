@@ -7,9 +7,9 @@ import { SourcePanel } from "@/components/SourcePanel";
 import { SymbolSearch } from "@/components/SymbolSearch";
 import { Toolbar } from "@/components/Toolbar";
 import { WarningPanel } from "@/components/WarningPanel";
-import { fetchGraph, fetchSource, fetchSymbols, fetchWarnings, type GraphRequest } from "@/lib/api";
-import { inferModulePrefix } from "@/lib/displaySymbol";
-import type { Graph, Node as GraphNode, SourceSnippet, SymbolInfo, Warning } from "@/types/graph";
+import { fetchCallsite, fetchGraph, fetchSource, fetchSymbols, fetchWarnings, type GraphRequest } from "@/lib/api";
+import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
+import type { Edge as GraphEdge, Graph, Node as GraphNode, SourceView, SymbolInfo, Warning } from "@/types/graph";
 
 export default function Home() {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
@@ -22,8 +22,9 @@ export default function Home() {
   const [expandInterface, setExpandInterface] = useState(false);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<Warning[]>([]);
-  const [source, setSource] = useState<SourceSnippet | null>(null);
+  const [source, setSource] = useState<SourceView | null>(null);
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [graphLoading, setGraphLoading] = useState(false);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -37,6 +38,8 @@ export default function Home() {
   });
   const requestSeqRef = useRef(0);
   const selectedNodeRef = useRef<GraphNode | null>(null);
+  const selectedEdgeRef = useRef<GraphEdge | null>(null);
+  const sourceRef = useRef<SourceView | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -79,21 +82,30 @@ export default function Home() {
 
   const modulePrefix = inferModulePrefix(symbols);
 
-  useEffect(() => {
-    graphRequestRef.current = {
-      entry,
+  const buildGraphRequest = useCallback(
+    (entryOverride?: string): GraphRequest => ({
+      entry: entryOverride ?? entry,
       depth,
       showExternal,
       showUnresolved,
       showInterface,
       expandInterface,
       packagePrefix: packageFilter || undefined,
-    };
-  }, [depth, entry, expandInterface, packageFilter, showExternal, showInterface, showUnresolved]);
+    }),
+    [depth, entry, expandInterface, packageFilter, showExternal, showInterface, showUnresolved],
+  );
+
+  useEffect(() => {
+    graphRequestRef.current = buildGraphRequest();
+  }, [buildGraphRequest]);
 
   useEffect(() => {
     selectedNodeRef.current = selectedNode;
   }, [selectedNode]);
+
+  useEffect(() => {
+    sourceRef.current = source;
+  }, [source]);
 
   const applyGraph = useCallback((nextGraph: Graph, preserveSelection: boolean) => {
     setGraph(nextGraph);
@@ -101,9 +113,18 @@ export default function Home() {
 
     if (preserveSelection) {
       const previous = selectedNodeRef.current;
+      const previousEdge = selectedEdgeRef.current;
+      const currentSource = sourceRef.current;
       const preserved = previous ? (nextGraph.nodes.find((node) => node.id === previous.id) ?? null) : null;
+      const preservedEdge = previousEdge ? (nextGraph.edges.find((edge) => sameEdge(edge, previousEdge)) ?? null) : null;
       setSelectedNode(preserved);
-      if (!preserved) {
+      selectedEdgeRef.current = preservedEdge;
+      setSelectedEdgeID(preservedEdge?.id ?? null);
+      if (currentSource?.mode === "node" && !preserved) {
+        setSource(null);
+        setSourceError(null);
+      }
+      if (currentSource?.mode === "callsite" && !preservedEdge) {
         setSource(null);
         setSourceError(null);
       }
@@ -111,16 +132,15 @@ export default function Home() {
     }
 
     setSelectedNode(nextGraph.nodes.find((node) => node.id === nextGraph.entry) ?? nextGraph.nodes[0] ?? null);
+    selectedEdgeRef.current = null;
+    setSelectedEdgeID(null);
     setSource(null);
     setSourceError(null);
   }, []);
 
   const loadGraph = useCallback(
     async (options?: { entryOverride?: string; preserveSelection?: boolean }) => {
-      const request = {
-        ...graphRequestRef.current,
-        entry: options?.entryOverride ?? graphRequestRef.current.entry,
-      };
+      const request = buildGraphRequest(options?.entryOverride);
       const preserveSelection = options?.preserveSelection ?? false;
       const requestID = requestSeqRef.current + 1;
       requestSeqRef.current = requestID;
@@ -131,6 +151,8 @@ export default function Home() {
         setSource(null);
         setSourceError(null);
         setSelectedNode(null);
+        selectedEdgeRef.current = null;
+        setSelectedEdgeID(null);
       }
       try {
         writeURLState(request);
@@ -150,7 +172,7 @@ export default function Home() {
         }
       }
     },
-    [applyGraph],
+    [applyGraph, buildGraphRequest],
   );
 
   useEffect(() => {
@@ -168,16 +190,43 @@ export default function Home() {
     void loadGraph({ entryOverride: symbolID });
   }
 
+  function manuallyLoadGraph() {
+    const resolvedEntry = resolveEntryInput(entry, symbols, modulePrefix);
+    if (resolvedEntry !== entry) {
+      setEntry(resolvedEntry);
+    }
+    void loadGraph({ entryOverride: resolvedEntry });
+  }
+
   async function loadSource(node: GraphNode) {
     setSelectedNode(node);
+    selectedEdgeRef.current = null;
+    setSelectedEdgeID(null);
     setSourceLoading(true);
     setSourceError(null);
     setSource(null);
     try {
       const snippet = await fetchSource(node.id);
-      setSource(snippet);
+      setSource({ mode: "node", data: snippet });
     } catch (error) {
       setSourceError(error instanceof Error ? error.message : "Failed to load source");
+    } finally {
+      setSourceLoading(false);
+    }
+  }
+
+  async function loadCallsite(edge: GraphEdge) {
+    setSelectedNode(null);
+    selectedEdgeRef.current = edge;
+    setSelectedEdgeID(edge.id);
+    setSourceLoading(true);
+    setSourceError(null);
+    setSource(null);
+    try {
+      const snippet = await fetchCallsite(edge.id, graphRequestRef.current);
+      setSource({ mode: "callsite", data: snippet });
+    } catch (error) {
+      setSourceError(error instanceof Error ? error.message : "Failed to load callsite");
     } finally {
       setSourceLoading(false);
     }
@@ -210,9 +259,7 @@ export default function Home() {
           <Toolbar
             depth={depth}
             onDepthChange={setDepth}
-            onLoadGraph={() => {
-              void loadGraph();
-            }}
+            onLoadGraph={manuallyLoadGraph}
             showExternal={showExternal}
             showUnresolved={showUnresolved}
             showInterface={showInterface}
@@ -232,10 +279,12 @@ export default function Home() {
           <GraphView
             graph={graph}
             selectedNode={selectedNode}
+            selectedEdgeID={selectedEdgeID}
             modulePrefix={modulePrefix}
             loading={graphLoading}
             error={graphError}
             onNodeSelect={loadSource}
+            onEdgeSelect={loadCallsite}
           />
         </section>
       </section>
@@ -256,6 +305,37 @@ function mergeWarnings(existing: Warning[], incoming: Warning[]): Warning[] {
     }
   }
   return merged;
+}
+
+function sameEdge(left: GraphEdge, right: GraphEdge): boolean {
+  return (
+    left.id === right.id &&
+    left.from === right.from &&
+    left.to === right.to &&
+    left.resolution === right.resolution &&
+    left.candidate === right.candidate &&
+    left.callsite.file === right.callsite.file &&
+    left.callsite.line === right.callsite.line &&
+    left.callsite.column === right.callsite.column
+  );
+}
+
+function resolveEntryInput(value: string, symbols: SymbolInfo[], modulePrefix: string): string {
+  const query = value.trim();
+  if (!query) {
+    return value;
+  }
+
+  const matches = symbols.filter((symbol) => {
+    return (
+      symbol.id === query ||
+      displaySymbolID(symbol.id, modulePrefix) === query ||
+      symbol.id.endsWith(`.${query}`) ||
+      symbol.label === query
+    );
+  });
+
+  return matches.length === 1 ? matches[0].id : query;
 }
 
 interface InitialGraphState {
