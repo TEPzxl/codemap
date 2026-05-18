@@ -66,6 +66,7 @@ type Edge struct {
 	Kind       string         `json:"kind"`
 	Resolution EdgeResolution `json:"resolution"`
 	Callsite   Callsite       `json:"callsite"`
+	Candidate  bool           `json:"candidate,omitempty"`
 }
 
 type Callsite struct {

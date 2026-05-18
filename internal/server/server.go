@@ -10,10 +10,11 @@ import (
 )
 
 type Project struct {
-	Root     string
-	Symbols  []analyzer.Symbol
-	Calls    []analyzer.Call
-	Warnings []analyzer.AnalyzeWarning
+	Root          string
+	Symbols       []analyzer.Symbol
+	Calls         []analyzer.Call
+	ExpandedCalls []analyzer.Call
+	Warnings      []analyzer.AnalyzeWarning
 
 	symbolByID map[string]analyzer.Symbol
 }
@@ -40,6 +41,12 @@ func LoadProject(rootPath string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
+	expandedCalls, err := analyzer.ExtractCallsWithOptions(loadResult, symbols, analyzer.CallOptions{
+		ExpandInterface: true,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	symbolByID := make(map[string]analyzer.Symbol, len(symbols))
 	for _, symbol := range symbols {
@@ -47,11 +54,12 @@ func LoadProject(rootPath string) (*Project, error) {
 	}
 
 	return &Project{
-		Root:       rootAbs,
-		Symbols:    symbols,
-		Calls:      calls,
-		Warnings:   loadResult.Warnings,
-		symbolByID: symbolByID,
+		Root:          rootAbs,
+		Symbols:       symbols,
+		Calls:         calls,
+		ExpandedCalls: expandedCalls,
+		Warnings:      loadResult.Warnings,
+		symbolByID:    symbolByID,
 	}, nil
 }
 
@@ -72,7 +80,11 @@ func NewHandler(project *Project) http.Handler {
 }
 
 func (p *Project) BuildGraph(options graphmodel.BuildOptions) (graphmodel.Graph, error) {
-	return graphmodel.BuildGraph(toGraphSymbols(p.Symbols), toGraphCalls(p.Calls), options)
+	calls := p.Calls
+	if options.ExpandInterface {
+		calls = p.ExpandedCalls
+	}
+	return graphmodel.BuildGraph(toGraphSymbols(p.Symbols), toGraphCalls(calls), options)
 }
 
 func toGraphSymbols(symbols []analyzer.Symbol) []graphmodel.Symbol {
@@ -101,6 +113,7 @@ func toGraphCalls(calls []analyzer.Call) []graphmodel.Call {
 			Kind:       call.Kind,
 			Resolution: call.Resolution,
 			Callsite:   call.Callsite,
+			Candidate:  call.Candidate,
 		})
 	}
 	return result

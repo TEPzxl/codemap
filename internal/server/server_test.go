@@ -130,6 +130,30 @@ func TestAPIHandlers(t *testing.T) {
 	})
 }
 
+func TestAPIGraphExpandInterface(t *testing.T) {
+	project, err := LoadProject(filepath.Join(findRepoRoot(t), "examples", "interface-call"))
+	if err != nil {
+		t.Fatalf("LoadProject returned error: %v", err)
+	}
+	handler := NewHandler(project)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/graph?entry=main.main&depth=5&expand_interface=true", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	var got graphmodel.Graph
+	decodeJSON(t, rr, &got)
+	requireServerGraphEdge(t, got,
+		"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+		"github.com/tepzxl/codemap/examples/interface-call/repository.(*MemoryUserRepository).Save",
+		graphmodel.EdgeResolutionInterface,
+		true,
+	)
+}
+
 func TestAPIErrors(t *testing.T) {
 	project := loadTestProject(t)
 	handler := NewHandler(project)
@@ -246,6 +270,17 @@ func requireSymbolID(t *testing.T, symbols []struct {
 		}
 	}
 	t.Fatalf("missing symbol %q in %#v", id, symbols)
+}
+
+func requireServerGraphEdge(t *testing.T, output graphmodel.Graph, from string, to string, resolution graphmodel.EdgeResolution, candidate bool) {
+	t.Helper()
+
+	for _, edge := range output.Edges {
+		if edge.From == from && edge.To == to && edge.Resolution == resolution && edge.Candidate == candidate {
+			return
+		}
+	}
+	t.Fatalf("missing graph edge from %q to %q resolution %q candidate %t in %#v", from, to, resolution, candidate, output.Edges)
 }
 
 func findRepoRoot(t *testing.T) string {

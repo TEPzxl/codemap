@@ -129,6 +129,62 @@ func TestGraphTraversal(t *testing.T) {
 		)
 	})
 
+	t.Run("interface candidates are visible only when expansion is enabled", func(t *testing.T) {
+		calls := append(interfaceCalls(), Call{
+			From:       "github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			To:         "github.com/tepzxl/codemap/examples/interface-call/repository.(*MemoryUserRepository).Save",
+			Kind:       "call",
+			Resolution: EdgeResolutionInterface,
+			Candidate:  true,
+			Callsite:   Callsite{File: "service/user.go", Line: 21, Column: 20},
+		})
+		symbols := append(interfaceSymbols(), Symbol{
+			ID:        "github.com/tepzxl/codemap/examples/interface-call/repository.(*MemoryUserRepository).Save",
+			Label:     "MemoryUserRepository.Save",
+			Kind:      "method",
+			Package:   "github.com/tepzxl/codemap/examples/interface-call/repository",
+			Receiver:  "*MemoryUserRepository",
+			File:      "repository/repo.go",
+			StartLine: 9,
+			EndLine:   12,
+		})
+
+		visibleWithoutCandidates, err := BuildGraph(symbols, calls, BuildOptions{
+			Entry:         "github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			Depth:         2,
+			ShowInterface: true,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+		requireEdge(t, visibleWithoutCandidates,
+			"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/interface-call/service.UserRepository.Save",
+			EdgeResolutionInterface,
+		)
+		forbidEdge(t, visibleWithoutCandidates,
+			"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/interface-call/repository.(*MemoryUserRepository).Save",
+		)
+
+		expanded, err := BuildGraph(symbols, calls, BuildOptions{
+			Entry:           "github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			Depth:           2,
+			ExpandInterface: true,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+		edge := requireEdge(t, expanded,
+			"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/interface-call/repository.(*MemoryUserRepository).Save",
+			EdgeResolutionInterface,
+		)
+		if !edge.Candidate {
+			t.Fatalf("expected expanded implementation edge to be marked candidate: %#v", edge)
+		}
+	})
+
 	t.Run("cycle does not recurse forever", func(t *testing.T) {
 		got, err := BuildGraph(cycleSymbols(), cycleCalls(), BuildOptions{
 			Entry: "example.com/cycle.A",
@@ -240,12 +296,22 @@ func forbidNode(t *testing.T, graph Graph, id string) {
 	}
 }
 
-func requireEdge(t *testing.T, graph Graph, from string, to string, resolution EdgeResolution) {
+func requireEdge(t *testing.T, graph Graph, from string, to string, resolution EdgeResolution) Edge {
 	t.Helper()
 	for _, edge := range graph.Edges {
 		if edge.From == from && edge.To == to && edge.Resolution == resolution {
-			return
+			return edge
 		}
 	}
 	t.Fatalf("missing edge %q -> %q (%s) in %#v", from, to, resolution, graph.Edges)
+	return Edge{}
+}
+
+func forbidEdge(t *testing.T, graph Graph, from string, to string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From == from && edge.To == to {
+			t.Fatalf("unexpected edge %q -> %q in %#v", from, to, graph.Edges)
+		}
+	}
 }

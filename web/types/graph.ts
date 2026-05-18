@@ -28,6 +28,7 @@ export interface Edge {
   kind: string;
   resolution: EdgeResolution;
   callsite: Callsite;
+  candidate?: boolean;
 }
 
 export interface Callsite {

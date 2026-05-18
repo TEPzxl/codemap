@@ -104,7 +104,90 @@ func TestOnly() {
 	})
 }
 
+func TestExtractCallsExpandInterfaceCandidates(t *testing.T) {
+	t.Run("interface fixture keeps original edge and adds pointer receiver candidate", func(t *testing.T) {
+		repoRoot := findRepoRoot(t)
+		calls := loadSymbolsAndCallsWithOptions(t, filepath.Join(repoRoot, "examples", "interface-call"), CallOptions{
+			ExpandInterface: true,
+		})
+
+		requireCall(t, calls,
+			"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/interface-call/service.UserRepository.Save",
+			graph.EdgeResolutionInterface,
+		)
+		candidate := requireCall(t, calls,
+			"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/interface-call/repository.(*MemoryUserRepository).Save",
+			graph.EdgeResolutionInterface,
+		)
+		if !candidate.Candidate {
+			t.Fatalf("expected concrete implementation edge to be marked candidate: %#v", candidate)
+		}
+	})
+
+	t.Run("value pointer multiple and signature mismatch cases use go/types implementation checks", func(t *testing.T) {
+		moduleDir := t.TempDir()
+		writeFile(t, filepath.Join(moduleDir, "go.mod"), "module example.com/interfacecandidates\n\ngo 1.25.0\n")
+		writeFile(t, filepath.Join(moduleDir, "main.go"), `package main
+
+type Store interface {
+	Save(name string) error
+}
+
+type ValueStore struct{}
+
+func (ValueStore) Save(name string) error {
+	_ = name
+	return nil
+}
+
+type PointerStore struct{}
+
+func (*PointerStore) Save(name string) error {
+	_ = name
+	return nil
+}
+
+type SecondPointerStore struct{}
+
+func (*SecondPointerStore) Save(name string) error {
+	_ = name
+	return nil
+}
+
+type WrongSignatureStore struct{}
+
+func (*WrongSignatureStore) Save(id int) error {
+	_ = id
+	return nil
+}
+
+type Service struct {
+	store Store
+}
+
+func (s *Service) Create(name string) error {
+	return s.store.Save(name)
+}
+`)
+
+		calls := loadSymbolsAndCallsWithOptions(t, moduleDir, CallOptions{ExpandInterface: true})
+		from := "example.com/interfacecandidates.(*Service).Create"
+
+		requireCandidateCall(t, calls, from, "example.com/interfacecandidates.ValueStore.Save")
+		requireCandidateCall(t, calls, from, "example.com/interfacecandidates.(*PointerStore).Save")
+		requireCandidateCall(t, calls, from, "example.com/interfacecandidates.(*SecondPointerStore).Save")
+		forbidCall(t, calls, from, "example.com/interfacecandidates.(*WrongSignatureStore).Save")
+	})
+}
+
 func loadSymbolsAndCalls(t *testing.T, rootPath string) []Call {
+	t.Helper()
+	return loadSymbolsAndCallsWithOptions(t, rootPath, CallOptions{})
+}
+
+func loadSymbolsAndCallsWithOptions(t *testing.T, rootPath string, options CallOptions) []Call {
 	t.Helper()
 
 	result, err := LoadPackages(LoadRequest{RootPath: rootPath})
@@ -117,7 +200,7 @@ func loadSymbolsAndCalls(t *testing.T, rootPath string) []Call {
 		t.Fatalf("ExtractSymbols returned error: %v", err)
 	}
 
-	calls, err := ExtractCalls(result, symbols)
+	calls, err := ExtractCallsWithOptions(result, symbols, options)
 	if err != nil {
 		t.Fatalf("ExtractCalls returned error: %v", err)
 	}
@@ -145,6 +228,26 @@ func requireResolution(t *testing.T, calls []Call, resolution graph.EdgeResoluti
 		}
 	}
 	t.Fatalf("missing call with resolution %q in %#v", resolution, calls)
+}
+
+func requireCandidateCall(t *testing.T, calls []Call, from string, to string) Call {
+	t.Helper()
+
+	call := requireCall(t, calls, from, to, graph.EdgeResolutionInterface)
+	if !call.Candidate {
+		t.Fatalf("expected call to be candidate: %#v", call)
+	}
+	return call
+}
+
+func forbidCall(t *testing.T, calls []Call, from string, to string) {
+	t.Helper()
+
+	for _, call := range calls {
+		if call.From == from && call.To == to {
+			t.Fatalf("unexpected call from %q to %q in %#v", from, to, calls)
+		}
+	}
 }
 
 func assertCallsites(t *testing.T, calls []Call) {

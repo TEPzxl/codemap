@@ -23,14 +23,16 @@ type Call struct {
 	Kind       string
 	Resolution EdgeResolution
 	Callsite   Callsite
+	Candidate  bool
 }
 
 type BuildOptions struct {
-	Entry          string
-	Depth          int
-	ShowExternal   bool
-	ShowUnresolved bool
-	ShowInterface  bool
+	Entry           string
+	Depth           int
+	ShowExternal    bool
+	ShowUnresolved  bool
+	ShowInterface   bool
+	ExpandInterface bool
 }
 
 func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, error) {
@@ -141,7 +143,10 @@ func includeCall(call Call, options BuildOptions) bool {
 	case EdgeResolutionUnresolved:
 		return options.ShowUnresolved
 	case EdgeResolutionInterface:
-		return options.ShowInterface
+		if call.Candidate {
+			return options.ExpandInterface
+		}
+		return options.ShowInterface || options.ExpandInterface
 	default:
 		return true
 	}
@@ -213,6 +218,7 @@ func edgeForCall(call Call, index int) Edge {
 		Kind:       call.Kind,
 		Resolution: call.Resolution,
 		Callsite:   call.Callsite,
+		Candidate:  call.Candidate,
 	}
 }
 
@@ -225,7 +231,7 @@ func addNode(result *Graph, nodeSet map[string]struct{}, node Node) {
 }
 
 func addEdge(result *Graph, edgeSet map[string]struct{}, edge Edge) {
-	key := edge.From + "\x00" + edge.To + "\x00" + edge.Kind + "\x00" + string(edge.Resolution) + "\x00" + edge.Callsite.File + fmt.Sprintf(":%d:%d", edge.Callsite.Line, edge.Callsite.Column)
+	key := edge.From + "\x00" + edge.To + "\x00" + edge.Kind + "\x00" + string(edge.Resolution) + "\x00" + fmt.Sprintf("%t", edge.Candidate) + "\x00" + edge.Callsite.File + fmt.Sprintf(":%d:%d", edge.Callsite.Line, edge.Callsite.Column)
 	if _, ok := edgeSet[key]; ok {
 		return
 	}

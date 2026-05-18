@@ -125,6 +125,12 @@ Build a graph:
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5
 ```
 
+Expand interface call candidates explicitly:
+
+```bash
+go run ./cmd/codemap graph ./examples/interface-call --entry main.main --depth 5 --expand-interface
+```
+
 Serve API and UI:
 
 ```bash
@@ -198,6 +204,12 @@ Graph:
 
 ```bash
 curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5"
+```
+
+Graph with interface implementation candidates:
+
+```bash
+curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&expand_interface=true"
 ```
 
 Source:

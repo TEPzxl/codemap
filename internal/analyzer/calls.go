@@ -19,12 +19,26 @@ type Call struct {
 	Kind       string               `json:"kind"`
 	Resolution graph.EdgeResolution `json:"resolution"`
 	Callsite   graph.Callsite       `json:"callsite"`
+	Candidate  bool                 `json:"candidate,omitempty"`
+}
+
+type CallOptions struct {
+	ExpandInterface bool
 }
 
 func ExtractCalls(loadResult LoadResult, symbols []Symbol) ([]Call, error) {
+	return ExtractCallsWithOptions(loadResult, symbols, CallOptions{})
+}
+
+func ExtractCallsWithOptions(loadResult LoadResult, symbols []Symbol, options CallOptions) ([]Call, error) {
 	symbolIDs := make(map[string]struct{}, len(symbols))
 	for _, symbol := range symbols {
 		symbolIDs[symbol.ID] = struct{}{}
+	}
+
+	var candidates *interfaceCandidateIndex
+	if options.ExpandInterface {
+		candidates = newInterfaceCandidateIndex(loadResult, symbolIDs)
 	}
 
 	calls := make([]Call, 0)
@@ -32,7 +46,7 @@ func ExtractCalls(loadResult LoadResult, symbols []Symbol) ([]Call, error) {
 		if pkg == nil {
 			continue
 		}
-		pkgCalls, err := extractPackageCalls(loadResult.rootPath, pkg, symbolIDs)
+		pkgCalls, err := extractPackageCalls(loadResult.rootPath, pkg, symbolIDs, candidates)
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +71,7 @@ func ExtractCalls(loadResult LoadResult, symbols []Symbol) ([]Call, error) {
 	return calls, nil
 }
 
-func extractPackageCalls(rootPath string, pkg *packages.Package, symbolIDs map[string]struct{}) ([]Call, error) {
+func extractPackageCalls(rootPath string, pkg *packages.Package, symbolIDs map[string]struct{}, candidates *interfaceCandidateIndex) ([]Call, error) {
 	calls := make([]Call, 0)
 
 	for _, file := range pkg.Syntax {
@@ -97,18 +111,22 @@ func extractPackageCalls(rootPath string, pkg *packages.Package, symbolIDs map[s
 					return true
 				}
 
-				to, resolution := resolveCallTarget(pkg, callExpr.Fun, symbolIDs)
-				calls = append(calls, Call{
+				target := resolveCallTarget(pkg, callExpr.Fun, symbolIDs)
+				call := Call{
 					From:       from,
-					To:         to,
+					To:         target.To,
 					Kind:       CallKind,
-					Resolution: resolution,
+					Resolution: target.Resolution,
 					Callsite: graph.Callsite{
 						File:   relFile,
 						Line:   callsite.Line,
 						Column: callsite.Column,
 					},
-				})
+				}
+				calls = append(calls, call)
+				if candidates != nil && target.Resolution == graph.EdgeResolutionInterface {
+					calls = append(calls, candidates.callsFor(call, target)...)
+				}
 				return true
 			})
 		}
@@ -117,36 +135,169 @@ func extractPackageCalls(rootPath string, pkg *packages.Package, symbolIDs map[s
 	return calls, nil
 }
 
-func resolveCallTarget(pkg *packages.Package, fun ast.Expr, symbolIDs map[string]struct{}) (string, graph.EdgeResolution) {
+type callTarget struct {
+	To              string
+	Resolution      graph.EdgeResolution
+	InterfaceMethod *types.Func
+	InterfaceType   types.Type
+}
+
+func resolveCallTarget(pkg *packages.Package, fun ast.Expr, symbolIDs map[string]struct{}) callTarget {
 	switch expr := fun.(type) {
 	case *ast.Ident:
 		obj := pkg.TypesInfo.Uses[expr]
 		fn, ok := obj.(*types.Func)
 		if !ok {
-			return expr.Name, graph.EdgeResolutionUnresolved
+			return callTarget{To: expr.Name, Resolution: graph.EdgeResolutionUnresolved}
 		}
-		return resolveFuncObject(fn, nil, symbolIDs)
+		to, resolution := resolveFuncObject(fn, nil, symbolIDs)
+		return callTarget{To: to, Resolution: resolution}
 	case *ast.SelectorExpr:
 		if selection := pkg.TypesInfo.Selections[expr]; selection != nil {
 			fn, ok := selection.Obj().(*types.Func)
 			if !ok {
-				return expr.Sel.Name, graph.EdgeResolutionUnresolved
+				return callTarget{To: expr.Sel.Name, Resolution: graph.EdgeResolutionUnresolved}
 			}
 			if isInterfaceReceiver(selection.Recv()) {
-				return methodID(fn, selection.Recv()), graph.EdgeResolutionInterface
+				return callTarget{
+					To:              methodID(fn, selection.Recv()),
+					Resolution:      graph.EdgeResolutionInterface,
+					InterfaceMethod: fn,
+					InterfaceType:   selection.Recv(),
+				}
 			}
-			return resolveFuncObject(fn, selection.Recv(), symbolIDs)
+			to, resolution := resolveFuncObject(fn, selection.Recv(), symbolIDs)
+			return callTarget{To: to, Resolution: resolution}
 		}
 
 		obj := pkg.TypesInfo.Uses[expr.Sel]
 		fn, ok := obj.(*types.Func)
 		if !ok {
-			return expr.Sel.Name, graph.EdgeResolutionUnresolved
+			return callTarget{To: expr.Sel.Name, Resolution: graph.EdgeResolutionUnresolved}
 		}
-		return resolveFuncObject(fn, nil, symbolIDs)
+		to, resolution := resolveFuncObject(fn, nil, symbolIDs)
+		return callTarget{To: to, Resolution: resolution}
 	default:
-		return "unresolved", graph.EdgeResolutionUnresolved
+		return callTarget{To: "unresolved", Resolution: graph.EdgeResolutionUnresolved}
 	}
+}
+
+type interfaceCandidateIndex struct {
+	symbolIDs map[string]struct{}
+	types     []types.Type
+}
+
+func newInterfaceCandidateIndex(loadResult LoadResult, symbolIDs map[string]struct{}) *interfaceCandidateIndex {
+	index := &interfaceCandidateIndex{
+		symbolIDs: symbolIDs,
+		types:     make([]types.Type, 0),
+	}
+	for _, pkg := range loadResult.loadedPackages {
+		if pkg == nil || pkg.Types == nil || pkg.Types.Scope() == nil {
+			continue
+		}
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			typeName, ok := scope.Lookup(name).(*types.TypeName)
+			if !ok {
+				continue
+			}
+			named, ok := types.Unalias(typeName.Type()).(*types.Named)
+			if !ok || isInterfaceReceiver(named) {
+				continue
+			}
+			index.types = append(index.types, named)
+		}
+	}
+	return index
+}
+
+func (i *interfaceCandidateIndex) callsFor(original Call, target callTarget) []Call {
+	if target.InterfaceMethod == nil || target.InterfaceType == nil {
+		return nil
+	}
+	iface := interfaceType(target.InterfaceType)
+	if iface == nil {
+		return nil
+	}
+
+	result := make([]Call, 0)
+	seen := make(map[string]struct{})
+	for _, typ := range i.types {
+		i.addImplementationCall(&result, seen, original, iface, target.InterfaceMethod, typ)
+		i.addImplementationCall(&result, seen, original, iface, target.InterfaceMethod, types.NewPointer(typ))
+	}
+	sort.Slice(result, func(a, b int) bool {
+		return result[a].To < result[b].To
+	})
+	return result
+}
+
+func (i *interfaceCandidateIndex) addImplementationCall(result *[]Call, seen map[string]struct{}, original Call, iface *types.Interface, interfaceMethod *types.Func, typ types.Type) {
+	if !types.Implements(typ, iface) {
+		return
+	}
+	method := matchingMethod(typ, interfaceMethod)
+	if method == nil {
+		return
+	}
+
+	id := funcObjectID(method, nil)
+	if _, ok := i.symbolIDs[id]; !ok {
+		return
+	}
+	if _, ok := seen[id]; ok {
+		return
+	}
+	seen[id] = struct{}{}
+
+	*result = append(*result, Call{
+		From:       original.From,
+		To:         id,
+		Kind:       original.Kind,
+		Resolution: graph.EdgeResolutionInterface,
+		Callsite:   original.Callsite,
+		Candidate:  true,
+	})
+}
+
+func interfaceType(typ types.Type) *types.Interface {
+	typ = types.Unalias(typ)
+	if named, ok := typ.(*types.Named); ok {
+		typ = named.Underlying()
+	}
+	iface, ok := typ.Underlying().(*types.Interface)
+	if !ok {
+		return nil
+	}
+	return iface.Complete()
+}
+
+func matchingMethod(typ types.Type, interfaceMethod *types.Func) *types.Func {
+	methodSet := types.NewMethodSet(typ)
+	for idx := 0; idx < methodSet.Len(); idx++ {
+		method, ok := methodSet.At(idx).Obj().(*types.Func)
+		if !ok || method.Name() != interfaceMethod.Name() {
+			continue
+		}
+		if signaturesMatch(method, interfaceMethod) {
+			return method
+		}
+	}
+	return nil
+}
+
+func signaturesMatch(candidate *types.Func, interfaceMethod *types.Func) bool {
+	candidateSig, candidateOK := candidate.Type().(*types.Signature)
+	interfaceSig, interfaceOK := interfaceMethod.Type().(*types.Signature)
+	if !candidateOK || !interfaceOK {
+		return false
+	}
+	return types.IdenticalIgnoreTags(signatureWithoutReceiver(candidateSig), signatureWithoutReceiver(interfaceSig))
+}
+
+func signatureWithoutReceiver(sig *types.Signature) *types.Signature {
+	return types.NewSignatureType(nil, nil, nil, sig.Params(), sig.Results(), sig.Variadic())
 }
 
 func resolveFuncObject(fn *types.Func, recv types.Type, symbolIDs map[string]struct{}) (string, graph.EdgeResolution) {

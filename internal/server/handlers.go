@@ -53,11 +53,12 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	graph, err := p.BuildGraph(graphmodel.BuildOptions{
-		Entry:          entry,
-		Depth:          depth,
-		ShowExternal:   query.Get("show_external") == "true",
-		ShowUnresolved: query.Get("show_unresolved") == "true",
-		ShowInterface:  query.Get("show_interface") == "true",
+		Entry:           entry,
+		Depth:           depth,
+		ShowExternal:    query.Get("show_external") == "true",
+		ShowUnresolved:  query.Get("show_unresolved") == "true",
+		ShowInterface:   query.Get("show_interface") == "true",
+		ExpandInterface: query.Get("expand_interface") == "true",
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

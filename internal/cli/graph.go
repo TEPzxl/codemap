@@ -19,6 +19,7 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 	showExternal := fs.Bool("show-external", false, "include external calls")
 	showUnresolved := fs.Bool("show-unresolved", false, "include unresolved calls")
 	showInterface := fs.Bool("show-interface", false, "include interface calls")
+	expandInterface := fs.Bool("expand-interface", false, "include candidate concrete implementations for interface calls")
 
 	rootPath, flagArgs := splitGraphArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -44,18 +45,21 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	calls, err := analyzer.ExtractCalls(loadResult, symbols)
+	calls, err := analyzer.ExtractCallsWithOptions(loadResult, symbols, analyzer.CallOptions{
+		ExpandInterface: *expandInterface,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "graph failed: %v\n", err)
 		return 1
 	}
 
 	graph, err := graphmodel.BuildGraph(toGraphSymbols(symbols), toGraphCalls(calls), graphmodel.BuildOptions{
-		Entry:          *entry,
-		Depth:          *depth,
-		ShowExternal:   *showExternal,
-		ShowUnresolved: *showUnresolved,
-		ShowInterface:  *showInterface,
+		Entry:           *entry,
+		Depth:           *depth,
+		ShowExternal:    *showExternal,
+		ShowUnresolved:  *showUnresolved,
+		ShowInterface:   *showInterface,
+		ExpandInterface: *expandInterface,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "graph failed: %v\n", err)
@@ -108,6 +112,7 @@ func toGraphCalls(calls []analyzer.Call) []graphmodel.Call {
 			Kind:       call.Kind,
 			Resolution: call.Resolution,
 			Callsite:   call.Callsite,
+			Candidate:  call.Candidate,
 		})
 	}
 	return result
