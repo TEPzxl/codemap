@@ -111,6 +111,7 @@ func NewHandler(project *Project) http.Handler {
 	mux.HandleFunc("/api/meta", project.handleMeta)
 	mux.HandleFunc("/api/rescan", project.handleRescan)
 	mux.HandleFunc("/api/entrypoints", project.handleEntrypoints)
+	mux.HandleFunc("/api/export", project.handleExport)
 	mux.HandleFunc("/api/symbols", project.handleSymbols)
 	mux.HandleFunc("/api/graph", project.handleGraph)
 	mux.HandleFunc("/api/package-graph", project.handlePackageGraph)
@@ -169,6 +170,14 @@ func (p *Project) BuildGraph(options graphmodel.BuildOptions) (graphmodel.Graph,
 		calls = p.ExpandedCalls
 	}
 	return graphmodel.BuildGraph(toGraphSymbols(p.Symbols), toGraphCalls(calls), options)
+}
+
+func (p *Project) ExportGraph(options graphmodel.BuildOptions, format graphmodel.ExportFormat) (string, string, error) {
+	graph, err := p.BuildGraph(options)
+	if err != nil {
+		return "", "", err
+	}
+	return graphmodel.ExportGraph(graph, format)
 }
 
 func (p *Project) BuildPackageGraph(options graphmodel.PackageGraphOptions) (graphmodel.PackageGraph, error) {

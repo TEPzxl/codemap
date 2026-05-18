@@ -96,4 +96,5 @@ run_json symbols simple-symbols symbols ./examples/simple
 run_json calls simple-calls calls ./examples/simple
 run_json entrypoints layered-service-entrypoints entrypoints ./examples/layered-service
 run_json graph layered-service-graph graph ./examples/layered-service --entry main.main --depth 5
+run_json graph layered-service-export-json export ./examples/layered-service --entry main.main --depth 5 --format json
 run_json packages layered-service-packages packages ./examples/layered-service --entry main.main --depth 5

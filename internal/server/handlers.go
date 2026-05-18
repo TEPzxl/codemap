@@ -84,6 +84,33 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, graph)
 }
 
+func (p *Project) handleExport(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+
+	options, ok := parseGraphOptions(w, r, true)
+	if !ok {
+		return
+	}
+	format := graphmodel.ExportFormat(r.URL.Query().Get("format"))
+	if format == "" {
+		format = graphmodel.ExportFormatJSON
+	}
+	if !format.IsValid() {
+		writeError(w, http.StatusBadRequest, "format must be one of json, mermaid, dot")
+		return
+	}
+	output, contentType, err := p.ExportGraph(options, format)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(output))
+}
+
 func (p *Project) handlePackageGraph(w http.ResponseWriter, r *http.Request) {
 	if !requireGET(w, r) {
 		return

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CurrentGraphSearchPanel } from "@/components/CurrentGraphSearchPanel";
 import { EntrypointsPanel } from "@/components/EntrypointsPanel";
+import { ExportPanel } from "@/components/ExportPanel";
 import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
 import { GraphModeToggle, type GraphMode } from "@/components/GraphModeToggle";
 import { GraphView } from "@/components/GraphView";
@@ -15,6 +16,7 @@ import { SymbolSearch } from "@/components/SymbolSearch";
 import { Toolbar } from "@/components/Toolbar";
 import { WarningPanel } from "@/components/WarningPanel";
 import {
+  fetchGraphExport,
   fetchCallsite,
   fetchEntrypoints,
   fetchGraph,
@@ -37,6 +39,7 @@ import type {
   Entrypoint,
   Graph,
   GraphDirection,
+  GraphExportFormat,
   Node as GraphNode,
   PackageGraph,
   PackageNode,
@@ -82,13 +85,16 @@ export default function Home() {
   const [graphLoading, setGraphLoading] = useState(false);
   const [pathLoading, setPathLoading] = useState(false);
   const [sourceLoading, setSourceLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [rescanLoading, setRescanLoading] = useState(false);
   const [apiError, setAPIError] = useState<string | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [rescanError, setRescanError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const graphLoadedRef = useRef(false);
   const graphRequestRef = useRef<GraphRequest>({
     entry: "main.main",
@@ -544,6 +550,38 @@ export default function Home() {
     window.setTimeout(() => setCopyStatus(null), 2000);
   }
 
+  async function copyGraphExport(format: GraphExportFormat) {
+    setExportLoading(true);
+    setExportError(null);
+    setExportStatus(null);
+    try {
+      const output = await fetchGraphExport(visibleGraphRequest, format);
+      await navigator.clipboard.writeText(output);
+      setExportStatus(`Copied ${format.toUpperCase()}`);
+      window.setTimeout(() => setExportStatus(null), 2000);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : `Failed to copy ${format}`);
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
+  async function downloadGraphExport(format: GraphExportFormat) {
+    setExportLoading(true);
+    setExportError(null);
+    setExportStatus(null);
+    try {
+      const output = await fetchGraphExport(visibleGraphRequest, format);
+      downloadTextFile(output, exportFilename(format), exportMimeType(format));
+      setExportStatus(`Downloaded ${format.toUpperCase()}`);
+      window.setTimeout(() => setExportStatus(null), 2000);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : `Failed to download ${format}`);
+    } finally {
+      setExportLoading(false);
+    }
+  }
+
   function changeGraphMode(nextMode: GraphMode) {
     setGraphMode(nextMode);
     if (!graphLoadedRef.current && nextMode === "package") {
@@ -607,6 +645,15 @@ export default function Home() {
               onCopyViewURL={copyViewURL}
               onFocusNode={focusNode}
               onResetToEntry={resetToEntry}
+            />
+            <ExportPanel
+              loading={exportLoading}
+              disabled={graphLoading || !loadedGraphRequest}
+              status={exportStatus}
+              error={exportError}
+              onCopyExport={copyGraphExport}
+              onDownloadExport={downloadGraphExport}
+              onCopyViewURL={copyViewURL}
             />
             {graphMode === "function" ? (
               <CurrentGraphSearchPanel
@@ -785,4 +832,28 @@ function writeURLState(options: GraphRequest) {
     return;
   }
   window.history.replaceState(null, "", `${window.location.pathname}?${serializeViewState(options).toString()}`);
+}
+
+function exportFilename(format: GraphExportFormat): string {
+  const extension = format === "mermaid" ? "mmd" : format;
+  return `codemap-graph.${extension}`;
+}
+
+function exportMimeType(format: GraphExportFormat): string {
+  return format === "json" ? "application/json" : "text/plain";
+}
+
+function downloadTextFile(content: string, filename: string, mimeType: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }

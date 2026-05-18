@@ -4,6 +4,8 @@ export type EdgeResolution = "resolved" | "interface" | "external" | "unresolved
 
 export type GraphDirection = "downstream" | "upstream" | "both";
 
+export type GraphExportFormat = "json" | "mermaid" | "dot";
+
 export interface Graph {
   entry: string;
   nodes: Node[];

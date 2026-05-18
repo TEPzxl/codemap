@@ -161,6 +161,54 @@ func TestAPIHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("export json", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/export?entry=main.main&depth=5&format=json&direction=downstream", nil)
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+		}
+		if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+			t.Fatalf("content type = %q, want json", contentType)
+		}
+		var got graphmodel.Graph
+		decodeJSON(t, rr, &got)
+		requireServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save",
+			graphmodel.EdgeResolutionResolved,
+			false,
+		)
+	})
+
+	t.Run("export mermaid and dot", func(t *testing.T) {
+		tests := []struct {
+			format string
+			want   string
+		}{
+			{format: "mermaid", want: "flowchart LR\n"},
+			{format: "dot", want: "digraph codemap {\n"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.format, func(t *testing.T) {
+				rr := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, "/api/export?entry=main.main&depth=5&format="+tt.format, nil)
+				handler.ServeHTTP(rr, req)
+
+				if rr.Code != http.StatusOK {
+					t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+				}
+				if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "text/plain") {
+					t.Fatalf("content type = %q, want text/plain", contentType)
+				}
+				if !strings.Contains(rr.Body.String(), tt.want) || !strings.Contains(rr.Body.String(), "UserService.CreateUser") {
+					t.Fatalf("export %s output mismatch:\n%s", tt.format, rr.Body.String())
+				}
+			})
+		}
+	})
+
 	t.Run("package graph", func(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/package-graph?entry=main.main&depth=5", nil)
@@ -618,6 +666,7 @@ func TestAPIErrors(t *testing.T) {
 		{name: "invalid graph direction", path: "/api/graph?entry=main.main&direction=sideways", want: http.StatusBadRequest},
 		{name: "invalid graph bool", path: "/api/graph?entry=main.main&show_external=maybe", want: http.StatusBadRequest},
 		{name: "invalid graph node limit", path: "/api/graph?entry=main.main&node_limit=-1", want: http.StatusBadRequest},
+		{name: "invalid export format", path: "/api/export?entry=main.main&format=svg", want: http.StatusBadRequest},
 		{name: "invalid package graph entry", path: "/api/package-graph?entry=not.exists&depth=5", want: http.StatusBadRequest},
 		{name: "invalid package graph depth", path: "/api/package-graph?depth=-1", want: http.StatusBadRequest},
 		{name: "invalid package graph bool", path: "/api/package-graph?show_external=maybe", want: http.StatusBadRequest},

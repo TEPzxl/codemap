@@ -116,8 +116,9 @@ http://localhost:8080
 14. 双击 package 节点切回 function graph 并按该 package 过滤。
 15. 在 `Entrypoints` 列表中点击候选入口，自动加载对应 graph。
 16. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
-17. 点击 `Copy view URL` 复制当前视图链接。
-18. 修改本地源码后点击 `Rescan` 刷新索引。
+17. 使用 `Export` 复制或下载当前 view 参数对应的 JSON、Mermaid、DOT。
+18. 点击 `Copy view URL` 复制当前视图链接。
+19. 修改本地源码后点击 `Rescan` 刷新索引。
 
 更多说明见：[docs/demo/README.md](docs/demo/README.md)。
 
@@ -162,6 +163,15 @@ go run ./cmd/codemap entrypoints ./examples/layered-service
 
 ```bash
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5
+```
+
+导出当前调用图：
+
+```bash
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format json
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format mermaid
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format dot
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format mermaid --out graph.mmd
 ```
 
 从选中节点查看上游调用：
@@ -262,6 +272,14 @@ Graph：
 
 ```bash
 curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5"
+```
+
+Export：
+
+```bash
+curl -s "http://localhost:8080/api/export?entry=main.main&depth=5&format=json"
+curl -s "http://localhost:8080/api/export?entry=main.main&depth=5&format=mermaid"
+curl -s "http://localhost:8080/api/export?entry=main.main&depth=5&format=dot"
 ```
 
 Focus graph：

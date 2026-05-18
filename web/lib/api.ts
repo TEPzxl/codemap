@@ -3,6 +3,7 @@ import type {
   EntrypointsResponse,
   Graph,
   GraphDirection,
+  GraphExportFormat,
   PackageGraph,
   PathResult,
   ProjectMeta,
@@ -117,6 +118,33 @@ function graphParams(options: GraphRequest): URLSearchParams {
 
 export function fetchGraph(options: GraphRequest): Promise<Graph> {
   return requestJSON<Graph>(graphURL(options));
+}
+
+export function exportURL(options: GraphRequest, format: GraphExportFormat): string {
+  const params = graphParams(options);
+  params.set("format", format);
+  return `/api/export?${params.toString()}`;
+}
+
+export async function fetchGraphExport(options: GraphRequest, format: GraphExportFormat): Promise<string> {
+  const response = await fetch(exportURL(options, format), {
+    headers: {
+      Accept: format === "json" ? "application/json" : "text/plain",
+    },
+  });
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body.error) {
+        message = body.error;
+      }
+    } catch {
+      // Keep the HTTP status fallback when the response is not JSON.
+    }
+    throw new Error(message);
+  }
+  return response.text();
 }
 
 export function packageGraphURL(options: PackageGraphRequest): string {
