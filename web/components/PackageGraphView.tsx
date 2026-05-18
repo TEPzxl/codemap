@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo } from "react";
 import {
   Background,
   BackgroundVariant,
-  Controls,
   MarkerType,
   MiniMap,
   Panel,
@@ -17,6 +16,7 @@ import {
   type Node as FlowNode,
 } from "@xyflow/react";
 
+import { ResetLayoutButton } from "@/components/ResetLayoutButton";
 import type { PackageEdge, PackageGraph, PackageNode } from "@/types/graph";
 
 interface PackageGraphViewProps {
@@ -121,21 +121,16 @@ function PackageGraphCanvas({
         }}
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#d9d3c7" />
-        <Controls position="bottom-left" />
         <MiniMap pannable zoomable position="bottom-right" nodeColor="#8fb199" maskColor="rgba(245, 241, 234, 0.72)" />
         <Panel position="top-right">
-          <button
-            type="button"
+          <ResetLayoutButton
             onClick={() => {
               applyLayout();
               window.setTimeout(() => {
                 void fitView({ padding: 0.2, duration: 250 });
               }, 0);
             }}
-            className="rounded-md border border-line bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm transition hover:border-moss hover:text-moss"
-          >
-            Reset layout
-          </button>
+          />
         </Panel>
       </ReactFlow>
     </div>

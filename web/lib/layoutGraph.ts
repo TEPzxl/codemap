@@ -7,68 +7,159 @@ export interface PositionedNode extends GraphNode {
   };
 }
 
+const ENTRY_X = 80;
+const DEPTH_GAP = 360;
+const TOP_Y = 120;
+const ROW_GAP = 170;
+
 export function layoutGraph(graph: Graph): PositionedNode[] {
-  const depthByNode = computeDepths(graph.entry, graph.edges);
-  const buckets = new Map<number, GraphNode[]>();
+  const nodeByID = new Map(graph.nodes.map((node) => [node.id, node]));
+  const outgoing = buildOutgoingEdges(graph.edges, nodeByID);
+  const placementByNode = computeSourceOrderPlacement(graph.entry, graph.nodes, outgoing, nodeByID);
 
-  for (const node of graph.nodes) {
-    const depth = depthByNode.get(node.id) ?? fallbackDepth(node, depthByNode);
-    const bucket = buckets.get(depth) ?? [];
-    bucket.push(node);
-    buckets.set(depth, bucket);
-  }
-
-  for (const bucket of buckets.values()) {
-    bucket.sort(compareNodes);
-  }
-
-  return [...graph.nodes].sort(compareNodes).map((node) => {
-    const depth = depthByNode.get(node.id) ?? fallbackDepth(node, depthByNode);
-    const bucket = buckets.get(depth) ?? [];
-    const index = bucket.findIndex((item) => item.id === node.id);
-    const centeredIndex = Math.max(index, 0) - (bucket.length - 1) / 2;
+  return graph.nodes.map((node) => {
+    const placement = placementByNode.get(node.id) ?? { depth: 0, row: 0 };
     return {
       ...node,
       position: {
-        x: depth * 360 + 80,
-        y: centeredIndex * 170 + 300,
+        x: ENTRY_X + placement.depth * DEPTH_GAP,
+        y: TOP_Y + placement.row * ROW_GAP,
       },
     };
   });
 }
 
-function computeDepths(entry: string, edges: Edge[]): Map<string, number> {
-  const adjacency = new Map<string, string[]>();
-  for (const edge of edges) {
-    const targets = adjacency.get(edge.from) ?? [];
-    targets.push(edge.to);
-    adjacency.set(edge.from, targets);
-  }
-
-  const depths = new Map<string, number>([[entry, 0]]);
-  const queue = [entry];
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      continue;
-    }
-    const nextDepth = (depths.get(current) ?? 0) + 1;
-    for (const target of adjacency.get(current) ?? []) {
-      const previous = depths.get(target);
-      if (previous === undefined || nextDepth < previous) {
-        depths.set(target, nextDepth);
-        queue.push(target);
-      }
-    }
-  }
-  return depths;
+interface Placement {
+  depth: number;
+  row: number;
 }
 
-function fallbackDepth(node: GraphNode, depthByNode: Map<string, number>): number {
-  if (node.id === node.package || depthByNode.size === 0) {
-    return 0;
+function computeSourceOrderPlacement(
+  entry: string,
+  nodes: GraphNode[],
+  outgoing: Map<string, Edge[]>,
+  nodeByID: Map<string, GraphNode>,
+): Map<string, Placement> {
+  const placements = new Map<string, Placement>();
+  const nextRowByDepth = new Map<number, number>();
+  const queue: string[] = [];
+
+  const enqueue = (nodeID: string, depth: number, preferredRow: number): void => {
+    if (!nodeByID.has(nodeID) || placements.has(nodeID)) {
+      return;
+    }
+    const row = Math.max(nextRowByDepth.get(depth) ?? 0, preferredRow);
+    placements.set(nodeID, { depth, row });
+    nextRowByDepth.set(depth, row + 1);
+    queue.push(nodeID);
+  };
+
+  const drainQueue = (): void => {
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        continue;
+      }
+      const placement = placements.get(current);
+      if (!placement) {
+        continue;
+      }
+      for (const edge of outgoing.get(current) ?? []) {
+        enqueue(edge.to, placement.depth + 1, placement.row);
+      }
+    }
+  };
+
+  enqueue(entry, 0, 0);
+  drainQueue();
+
+  const fallbackDepth = placements.size > 0 ? Math.max(...[...placements.values()].map((placement) => placement.depth)) + 1 : 0;
+  const unvisited = nodes.filter((node) => !placements.has(node.id)).sort(compareNodes);
+  for (const node of unvisited) {
+    enqueue(node.id, fallbackDepth, 0);
+    drainQueue();
   }
-  return Math.max(...depthByNode.values(), 0) + 1;
+
+  return placements;
+}
+
+function buildOutgoingEdges(edges: Edge[], nodeByID: Map<string, GraphNode>): Map<string, Edge[]> {
+  const outgoing = new Map<string, Edge[]>();
+  for (const edge of edges) {
+    const list = outgoing.get(edge.from) ?? [];
+    list.push(edge);
+    outgoing.set(edge.from, list);
+  }
+
+  for (const list of outgoing.values()) {
+    list.sort(compareEdgesBySourceOrder(nodeByID));
+  }
+  return outgoing;
+}
+
+interface SourceOrderWeight {
+  file: string;
+  line: number;
+  column: number;
+  edgeID: string;
+}
+
+function compareEdgesBySourceOrder(nodeByID: Map<string, GraphNode>): (a: Edge, b: Edge) => number {
+  return (a, b) => {
+    const leftValid = hasValidCallsite(a);
+    const rightValid = hasValidCallsite(b);
+    if (leftValid && rightValid) {
+      return compareSourceOrderWeight(sourceOrderWeight(a), sourceOrderWeight(b));
+    }
+    if (leftValid && !rightValid) {
+      return -1;
+    }
+    if (!leftValid && rightValid) {
+      return 1;
+    }
+
+    const leftNode = nodeByID.get(a.to);
+    const rightNode = nodeByID.get(b.to);
+    if (leftNode && rightNode) {
+      const order = compareNodes(leftNode, rightNode);
+      if (order !== 0) {
+        return order;
+      }
+    }
+    if (leftNode && !rightNode) {
+      return -1;
+    }
+    if (!leftNode && rightNode) {
+      return 1;
+    }
+    return a.id.localeCompare(b.id);
+  };
+}
+
+function sourceOrderWeight(edge: Edge): SourceOrderWeight {
+  return {
+    file: edge.callsite.file,
+    line: edge.callsite.line,
+    column: edge.callsite.column,
+    edgeID: edge.id,
+  };
+}
+
+function compareSourceOrderWeight(a: SourceOrderWeight, b: SourceOrderWeight): number {
+  if (a.file !== b.file) {
+    return a.file.localeCompare(b.file);
+  }
+  if (a.line !== b.line) {
+    return a.line - b.line;
+  }
+  if (a.column !== b.column) {
+    return a.column - b.column;
+  }
+  return a.edgeID.localeCompare(b.edgeID);
+}
+
+function hasValidCallsite(edge: Edge): boolean {
+  return edge.callsite.file !== "" && edge.callsite.line > 0 && edge.callsite.column > 0;
 }
 
 function compareNodes(a: GraphNode, b: GraphNode): number {

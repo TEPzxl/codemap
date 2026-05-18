@@ -6,7 +6,7 @@ import { CurrentGraphSearchPanel } from "@/components/CurrentGraphSearchPanel";
 import { EntrypointsPanel } from "@/components/EntrypointsPanel";
 import { ExportPanel } from "@/components/ExportPanel";
 import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
-import { GraphModeToggle, type GraphMode } from "@/components/GraphModeToggle";
+import { GraphModeToggle } from "@/components/GraphModeToggle";
 import { GraphView } from "@/components/GraphView";
 import { PackageGraphView } from "@/components/PackageGraphView";
 import { PathSearchPanel } from "@/components/PathSearchPanel";
@@ -32,7 +32,9 @@ import {
 } from "@/lib/api";
 import { searchCurrentGraphNodes } from "@/lib/currentGraphSearch";
 import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
+import { entrypointTargetMode, type GraphMode } from "@/lib/entrypointSelection";
 import { summarizeGraph } from "@/lib/graphSummary";
+import { filterGraphByPackage } from "@/lib/packageDrilldown";
 import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
 import type {
   Edge as GraphEdge,
@@ -102,6 +104,7 @@ export default function Home() {
     direction: "downstream",
   });
   const initialGraphRequestRef = useRef<GraphRequest | null>(null);
+  const skipNextAutoRefreshRef = useRef(false);
   const requestSeqRef = useRef(0);
   const selectedNodeRef = useRef<GraphNode | null>(null);
   const selectedEdgeRef = useRef<GraphEdge | null>(null);
@@ -350,6 +353,10 @@ export default function Home() {
     if (!graphLoadedRef.current) {
       return;
     }
+    if (skipNextAutoRefreshRef.current) {
+      skipNextAutoRefreshRef.current = false;
+      return;
+    }
     const timeout = window.setTimeout(() => {
       if (graphMode === "package") {
         void loadPackageGraph();
@@ -373,11 +380,16 @@ export default function Home() {
   }, [loadGraphRequest, symbolsLoading]);
 
   function selectSymbol(symbolID: string) {
-    setGraphMode("function");
+    const nextMode = entrypointTargetMode(graphMode);
+    setGraphMode(nextMode);
     setEntry(symbolID);
     setRootEntry(symbolID);
     setPathFrom(symbolID);
     setDirection("downstream");
+    if (nextMode === "package") {
+      void loadPackageGraphRequest({ ...buildPackageGraphRequest(symbolID), direction: "downstream" });
+      return;
+    }
     void loadGraphRequest({ ...buildGraphRequest(symbolID), direction: "downstream" });
   }
 
@@ -599,32 +611,53 @@ export default function Home() {
     setSelectedPackageID(node.id);
     setPackageFilter(prefix);
     setGraphMode("function");
-    void loadGraphRequest({ ...buildGraphRequest(), packagePrefix: prefix });
+    if (!graph) {
+      void loadGraphRequest({ ...buildGraphRequest(), packagePrefix: prefix });
+      return;
+    }
+
+    const filteredGraph = filterGraphByPackage(graph, prefix);
+    if (filteredGraph.nodes.length === 0) {
+      void loadGraphRequest({ ...buildGraphRequest(), packagePrefix: prefix });
+      return;
+    }
+
+    skipNextAutoRefreshRef.current = true;
+    const nextRequest = {
+      ...(loadedGraphRequest ?? buildGraphRequest()),
+      entry: filteredGraph.entry,
+      packagePrefix: prefix,
+    };
+    graphRequestRef.current = nextRequest;
+    setLoadedGraphRequest(nextRequest);
+    writeURLState(nextRequest);
+    applyGraph(filteredGraph, false);
+    setPathResult(null);
   }
 
   const visibleGraphRequest = loadedGraphRequest ?? buildGraphRequest();
 
   return (
-    <main className="grid min-h-screen grid-rows-[auto_1fr_auto]">
+    <main className="grid h-screen min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <header className="border-b border-line bg-paper/95 px-5 py-4 backdrop-blur">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-ink">codemap</h1>
             <p className="mt-1 text-sm text-steel">Go call graph explorer</p>
           </div>
-          <div className="rounded-md border border-line bg-white px-3 py-2 font-mono text-xs text-steel">API /api/*</div>
+          <HeaderSelectionSummary node={selectedNode} modulePrefix={modulePrefix} />
         </div>
       </header>
 
       <section
         className={
           sidebarCollapsed
-            ? "grid min-h-0 grid-cols-1"
-            : "grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]"
+            ? "grid min-h-0 grid-cols-1 overflow-hidden"
+            : "grid min-h-0 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]"
         }
       >
         {!sidebarCollapsed ? (
-          <aside className="grid min-h-0 min-w-0 content-start gap-5 overflow-y-auto overflow-x-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
+          <aside className="grid h-full min-h-0 min-w-0 content-start gap-5 overflow-y-auto overflow-x-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
             <ProjectMetaPanel meta={meta} loading={rescanLoading} error={rescanError} onRescan={handleRescan} />
             <GraphModeToggle mode={graphMode} onChange={changeGraphMode} />
             <EntrypointsPanel
@@ -715,7 +748,7 @@ export default function Home() {
           </aside>
         ) : null}
 
-        <section className="relative min-h-[520px] min-w-0">
+        <section className="relative min-h-0 min-w-0 overflow-hidden">
           <button
             type="button"
             onClick={() => setSidebarCollapsed((value) => !value)}
@@ -741,7 +774,6 @@ export default function Home() {
               graph={graph}
               selectedNode={selectedNode}
               selectedEdgeID={selectedEdgeID}
-              modulePrefix={modulePrefix}
               loading={graphLoading}
               error={graphError}
               onNodeSelect={loadSource}
@@ -856,4 +888,22 @@ function downloadTextFile(content: string, filename: string, mimeType: string) {
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+}
+
+function HeaderSelectionSummary({ node, modulePrefix }: { node: GraphNode | null; modulePrefix: string }) {
+  if (!node) {
+    return <div className="rounded-md border border-line bg-white px-3 py-2 font-mono text-xs text-steel">API /api/*</div>;
+  }
+
+  return (
+    <div className="grid max-w-[min(520px,100%)] min-w-0 gap-1 rounded-md border border-line bg-white px-3 py-2 text-right shadow-sm">
+      <p className="truncate text-sm font-semibold text-ink">{node.label}</p>
+      <p className="truncate font-mono text-xs text-steel" title={node.id}>
+        {displaySymbolID(node.id, modulePrefix)}
+      </p>
+      <p className="truncate text-xs text-steel" title={node.file || node.package}>
+        {node.file || node.package}
+      </p>
+    </div>
+  );
 }

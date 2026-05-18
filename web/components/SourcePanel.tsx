@@ -1,5 +1,8 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { clampSourcePanelHeight, sourcePanelDefaultHeight } from "@/lib/sourcePanelSizing";
 import type { SourceView } from "@/types/graph";
 
 interface SourcePanelProps {
@@ -9,12 +12,61 @@ interface SourcePanelProps {
 }
 
 export function SourcePanel({ source, loading, error }: SourcePanelProps) {
+  const [height, setHeight] = useState(sourcePanelDefaultHeight);
+  const dragStartRef = useRef<{ y: number; height: number } | null>(null);
   const data = source?.data ?? null;
   const title = source?.mode === "callsite" ? "Callsite" : "Node source";
   const location = source ? sourceLocation(source) : "No graph item selected";
 
+  const stopResize = useCallback(() => {
+    dragStartRef.current = null;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const start = dragStartRef.current;
+      if (!start) {
+        return;
+      }
+      const nextHeight = start.height - (event.clientY - start.y);
+      setHeight(clampSourcePanelHeight(nextHeight, window.innerHeight));
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+    };
+  }, [stopResize]);
+
+  useEffect(() => {
+    function handleResize() {
+      setHeight((current) => clampSourcePanelHeight(current, window.innerHeight));
+    }
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   return (
-    <section className="min-h-48 border-t border-line bg-[#111820] text-stone-100">
+    <section className="relative flex min-h-40 flex-col border-t border-line bg-[#111820] text-stone-100" style={{ height }}>
+      <button
+        type="button"
+        aria-label="Resize source panel"
+        title="Drag to resize source panel"
+        onPointerDown={(event) => {
+          dragStartRef.current = { y: event.clientY, height };
+          document.body.style.cursor = "row-resize";
+          document.body.style.userSelect = "none";
+        }}
+        onDoubleClick={() => setHeight(sourcePanelDefaultHeight)}
+        className="absolute -top-1 left-0 z-10 h-2 w-full cursor-row-resize bg-transparent transition hover:bg-moss/20"
+      />
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold">{title}</h2>
@@ -34,7 +86,7 @@ export function SourcePanel({ source, loading, error }: SourcePanelProps) {
         ) : null}
       </div>
 
-      <div className="max-h-72 overflow-auto p-4">
+      <div className="min-h-0 flex-1 overflow-auto p-4">
         {loading ? <p className="text-sm text-stone-300">Loading source</p> : null}
         {error ? <p className="text-sm text-red-300">{error}</p> : null}
         {!loading && !error && !source ? (

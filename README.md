@@ -2,7 +2,9 @@
 
 `codemap` 是一个本地优先的 Go 静态分析与调用图浏览工具。它扫描本地 Go module 或 workspace，提取静态可解析的函数与方法调用关系，并提供一个基于 React Flow 的交互式 Web UI，用于查看调用链、源码片段和调用点。
 
-## v0.2 功能
+## v0.3 功能
+
+v0.3 的主题是 **Focused Graph Exploration**：在不改变 Graph JSON Schema 必填字段、不改变 v0.2 `/api/graph` 默认行为的前提下，让用户能从入口、节点、路径和 package 维度探索更大的静态调用图。
 
 - 使用 `go/packages` 扫描本地 Go module。
 - 提取函数和方法 symbol，并生成稳定 ID。
@@ -10,7 +12,13 @@
 - 从入口 symbol 构建带 depth 限制的调用图。
 - 通过 `--expand-interface` / `expand_interface=true` 展开接口实现候选。
 - CLI、HTTP API 和本地 Web UI 使用一致的图过滤选项。
-- Web 支持 symbol 搜索、package filter、depth 控制和 graph filter toggles。
+- Web 支持 symbol 搜索、package filter、depth 控制、graph filter toggles、graph summary 和 URL view state。
+- 支持从任意节点做 downstream、upstream 和 neighborhood focus。
+- 支持 symbol path search，用静态调用图查询 `from` 到 `to` 的调用路径。
+- 支持从函数/方法调用图聚合 package-level call overview。
+- 支持启发式 entrypoint discovery，优先展示 `main` functions。
+- Web 支持当前图搜索、节点跳转、邻居高亮、sidebar collapse 和加载/错误状态展示。
+- 支持当前视图导出 JSON、Mermaid、DOT，并复制可分享 view URL。
 - 通过 `/api/source` 查看节点源码。
 - 通过 `/api/callsite` 查看边对应的调用点源码。
 - 通过 `/api/meta` 查看项目元信息。
@@ -80,6 +88,16 @@ release 产物会输出到：
 dist/codemap-linux-amd64
 dist/codemap-darwin-arm64
 dist/codemap-darwin-amd64
+```
+
+v0.3 release 前建议完整运行：
+
+```bash
+make check
+make web-build
+make build
+make release
+./scripts/smoke.sh
 ```
 
 ## 快速 Demo
@@ -416,6 +434,15 @@ Local Go repo
 - interface candidate expansion 是静态保守候选，不等同于运行时真实分派。
 - 通过函数变量触发的动态调用可能会标记为 `unresolved`。
 - 调用图是静态近似结果，不是运行时精确调用链。
+- Path search 查询的是静态调用图路径，不代表运行时必经路径。
+- Package graph 是从函数/方法 call graph 聚合得到，不是 import graph。
 - Entrypoint discovery 是基于 main/exported/name/handler/goroutine 的启发式推荐，不保证完整或绝对准确。
 - 标准库和第三方调用默认隐藏，除非显式启用。
 - 不包含数据库、编辑器插件或 LLM 解释层。
+
+## Upgrade notes
+
+- v0.3 没有改变 Graph JSON Schema 的必填字段。
+- `/api/graph` 默认仍按 downstream 方向、depth 5 和保守过滤返回函数级调用图。
+- `/api/path`、`/api/package-graph`、`/api/entrypoints` 和 `/api/export` 是新增的 additive API。
+- 发布前运行 `make web-build`，确保 `internal/server/static/` 与当前 Web UI 一致。

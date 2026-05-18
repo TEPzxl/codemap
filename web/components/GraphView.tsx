@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo } from "react";
 import {
   Background,
   BackgroundVariant,
-  Controls,
   MarkerType,
   MiniMap,
   Panel,
@@ -18,16 +17,15 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { ResetLayoutButton } from "@/components/ResetLayoutButton";
 import { layoutGraph } from "@/lib/layoutGraph";
 import type { PositionedNode } from "@/lib/layoutGraph";
-import { displayPackage, displaySymbolID } from "@/lib/displaySymbol";
 import type { Edge as GraphEdge, Graph, Node as GraphNode } from "@/types/graph";
 
 interface GraphViewProps {
   graph: Graph | null;
   selectedNode: GraphNode | null;
   selectedEdgeID: string | null;
-  modulePrefix: string;
   loading?: boolean;
   error?: string | null;
   onNodeSelect: (node: GraphNode) => void;
@@ -38,7 +36,6 @@ export function GraphView({
   graph,
   selectedNode,
   selectedEdgeID,
-  modulePrefix,
   loading,
   error,
   onNodeSelect,
@@ -60,7 +57,6 @@ export function GraphView({
         graph={graph}
         selectedNode={selectedNode}
         selectedEdgeID={selectedEdgeID}
-        modulePrefix={modulePrefix}
         onNodeSelect={onNodeSelect}
         onEdgeSelect={onEdgeSelect}
       />
@@ -72,14 +68,12 @@ function GraphCanvas({
   graph,
   selectedNode,
   selectedEdgeID,
-  modulePrefix,
   onNodeSelect,
   onEdgeSelect,
 }: {
   graph: Graph;
   selectedNode: GraphNode | null;
   selectedEdgeID: string | null;
-  modulePrefix: string;
   onNodeSelect: (node: GraphNode) => void;
   onEdgeSelect: (edge: GraphEdge) => void;
 }) {
@@ -156,7 +150,6 @@ function GraphCanvas({
 
   return (
     <div className="relative h-full min-h-[520px]">
-      <SelectedNodeOverlay node={selectedNode} modulePrefix={modulePrefix} />
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -185,7 +178,6 @@ function GraphCanvas({
         }}
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#d9d3c7" />
-        <Controls position="bottom-left" />
         <MiniMap
           pannable
           zoomable
@@ -193,19 +185,15 @@ function GraphCanvas({
           nodeColor={(node) => miniMapNodeColor(node.data.kind)}
           maskColor="rgba(245, 241, 234, 0.72)"
         />
-        <Panel position="top-right" className="flex gap-2">
-          <button
-            type="button"
+        <Panel position="top-right">
+          <ResetLayoutButton
             onClick={() => {
               applyLayout();
               window.setTimeout(() => {
                 void fitView({ padding: 0.2, duration: 250 });
               }, 0);
             }}
-            className="rounded-md border border-line bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm transition hover:border-moss hover:text-moss"
-          >
-            Reset layout
-          </button>
+          />
         </Panel>
       </ReactFlow>
     </div>
@@ -363,21 +351,6 @@ function miniMapNodeColor(kind: unknown): string {
     default:
       return "#91b7d9";
   }
-}
-
-function SelectedNodeOverlay({ node, modulePrefix }: { node: GraphNode | null; modulePrefix: string }) {
-  if (!node) {
-    return null;
-  }
-  return (
-    <div className="pointer-events-none absolute left-4 top-16 z-10 max-w-[min(520px,calc(100%-2rem))] rounded-md border border-line bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
-      <p className="text-sm font-semibold text-ink">{node.label}</p>
-      <p className="mt-1 break-all font-mono text-xs leading-5 text-steel" title={node.id}>
-        {displaySymbolID(node.id, modulePrefix)}
-      </p>
-      <p className="mt-1 break-all text-xs text-steel">{node.file || displayPackage(node.package, modulePrefix)}</p>
-    </div>
-  );
 }
 
 function GraphState({ message, tone = "muted" }: { message: string; tone?: "muted" | "error" }) {

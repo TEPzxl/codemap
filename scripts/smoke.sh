@@ -48,6 +48,8 @@ func main() {
 		requireString(payload, "entry")
 		requireArray(payload, "nodes")
 		requireArray(payload, "edges")
+	case "path":
+		requireArray(payload, "paths")
 	case "packages":
 		requireArray(payload, "nodes")
 		requireArray(payload, "edges")
@@ -96,5 +98,14 @@ run_json symbols simple-symbols symbols ./examples/simple
 run_json calls simple-calls calls ./examples/simple
 run_json entrypoints layered-service-entrypoints entrypoints ./examples/layered-service
 run_json graph layered-service-graph graph ./examples/layered-service --entry main.main --depth 5
+run_json path layered-service-path path ./examples/layered-service --from main.main --to UserRepository.Save --max-depth 8 --limit 5
 run_json graph layered-service-export-json export ./examples/layered-service --entry main.main --depth 5 --format json
 run_json packages layered-service-packages packages ./examples/layered-service --entry main.main --depth 5
+
+mermaid_output="$tmpdir/layered-service-export.mmd"
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format mermaid > "$mermaid_output"
+grep -q '^flowchart LR$' "$mermaid_output"
+
+dot_output="$tmpdir/layered-service-export.dot"
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format dot > "$dot_output"
+grep -q '^digraph codemap {$' "$dot_output"
