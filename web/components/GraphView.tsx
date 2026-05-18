@@ -1,9 +1,25 @@
 "use client";
 
-import { Background, BackgroundVariant, Controls, ReactFlow, type Edge as FlowEdge, type Node as FlowNode } from "@xyflow/react";
+import { useCallback, useEffect, useMemo } from "react";
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  MarkerType,
+  MiniMap,
+  Panel,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
+  type Edge as FlowEdge,
+  type Node as FlowNode,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { layoutGraph } from "@/lib/layoutGraph";
+import type { PositionedNode } from "@/lib/layoutGraph";
 import { displayPackage, displaySymbolID } from "@/lib/displaySymbol";
 import type { Graph, Node as GraphNode } from "@/types/graph";
 
@@ -27,39 +43,56 @@ export function GraphView({ graph, selectedNode, modulePrefix, loading, error, o
     return <GraphState message="No graph loaded" />;
   }
 
-  const positioned = layoutGraph(graph);
-  const nodeByID = new Map(graph.nodes.map((node) => [node.id, node]));
-  const nodes: FlowNode[] = positioned.map((node) => ({
-    id: node.id,
-    position: node.position,
-    data: {
-      label: (
-        <div className="grid gap-1">
-          <span className="text-sm font-semibold text-ink">{node.label}</span>
-          <span className="font-mono text-[10px] uppercase tracking-wide text-steel">{node.kind}</span>
-        </div>
-      ),
-    },
-    className: nodeClassName(node, selectedNode?.id === node.id),
-  }));
-  const edges: FlowEdge[] = graph.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.from,
-    target: edge.to,
-    type: "smoothstep",
-    animated: edge.resolution === "interface" || edge.resolution === "unresolved",
-    label: edge.candidate ? "candidate" : edge.resolution,
-    style: {
-      stroke: edge.resolution === "resolved" ? "#58745f" : "#d95f3d",
-      strokeWidth: 1.5,
-      strokeDasharray: edge.candidate ? "6 4" : undefined,
-    },
-    labelStyle: {
-      fill: "#52616b",
-      fontSize: 11,
-      fontWeight: 600,
-    },
-  }));
+  return (
+    <ReactFlowProvider>
+      <GraphCanvas graph={graph} selectedNode={selectedNode} modulePrefix={modulePrefix} onNodeSelect={onNodeSelect} />
+    </ReactFlowProvider>
+  );
+}
+
+function GraphCanvas({
+  graph,
+  selectedNode,
+  modulePrefix,
+  onNodeSelect,
+}: {
+  graph: Graph;
+  selectedNode: GraphNode | null;
+  modulePrefix: string;
+  onNodeSelect: (node: GraphNode) => void;
+}) {
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>([]);
+  const { fitView } = useReactFlow();
+
+  const nodeByID = useMemo(() => new Map(graph?.nodes.map((node) => [node.id, node]) ?? []), [graph]);
+  const connectedEdgeIDs = useMemo(() => {
+    if (!graph || !selectedNode) {
+      return new Set<string>();
+    }
+    return new Set(
+      graph.edges.filter((edge) => edge.from === selectedNode.id || edge.to === selectedNode.id).map((edge) => edge.id),
+    );
+  }, [graph, selectedNode]);
+
+  const applyLayout = useCallback(() => {
+    if (!graph) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+    const positioned = layoutGraph(graph);
+    setNodes(positioned.map((node) => toFlowNode(node, selectedNode?.id === node.id)));
+    setEdges(graph.edges.map((edge) => toFlowEdge(edge, connectedEdgeIDs.has(edge.id))));
+  }, [connectedEdgeIDs, graph, selectedNode, setEdges, setNodes]);
+
+  useEffect(() => {
+    applyLayout();
+    const timeout = window.setTimeout(() => {
+      void fitView({ padding: 0.2, duration: 250 });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [applyLayout, fitView]);
 
   return (
     <div className="relative h-full min-h-[520px]">
@@ -68,8 +101,15 @@ export function GraphView({ graph, selectedNode, modulePrefix, loading, error, o
         nodes={nodes}
         edges={edges}
         fitView
+        fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
         maxZoom={2}
+        nodesDraggable
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onPaneClick={() => {
+          // Keep selection stable so the source panel remains useful while panning.
+        }}
         onNodeClick={(_, flowNode) => {
           const node = nodeByID.get(flowNode.id);
           if (node) {
@@ -79,16 +119,145 @@ export function GraphView({ graph, selectedNode, modulePrefix, loading, error, o
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#d9d3c7" />
         <Controls position="bottom-left" />
+        <MiniMap
+          pannable
+          zoomable
+          position="bottom-right"
+          nodeColor={(node) => miniMapNodeColor(node.data.kind)}
+          maskColor="rgba(245, 241, 234, 0.72)"
+        />
+        <Panel position="top-right" className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              applyLayout();
+              window.setTimeout(() => {
+                void fitView({ padding: 0.2, duration: 250 });
+              }, 0);
+            }}
+            className="rounded-md border border-line bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm transition hover:border-moss hover:text-moss"
+          >
+            Reset layout
+          </button>
+        </Panel>
       </ReactFlow>
     </div>
   );
 }
 
 function nodeClassName(node: GraphNode, selected: boolean): string {
-  const base = "!rounded-md !border !px-3 !py-2 !shadow-sm";
-  const tone = node.is_external ? "!border-signal/40 !bg-orange-50" : "!border-moss/30 !bg-white";
+  const base = "!rounded-md !border !px-3 !py-2 !shadow-sm !transition-shadow";
+  const tone = nodeToneClass(node);
   const selectedTone = selected ? "!border-moss !bg-green-50 !shadow-[0_0_0_3px_rgba(88,116,95,0.25)]" : "";
   return `${base} ${tone} ${selectedTone}`;
+}
+
+function nodeToneClass(node: GraphNode): string {
+  if (node.is_external || node.kind === "external") {
+    return "!border-signal/40 !bg-orange-50";
+  }
+  if (node.kind === "unresolved") {
+    return "!border-signal/50 !bg-red-50";
+  }
+  if (node.kind === "method") {
+    return "!border-moss/40 !bg-white";
+  }
+  return "!border-blue-300 !bg-blue-50";
+}
+
+function toFlowNode(node: PositionedNode, selected: boolean): FlowNode {
+  return {
+    id: node.id,
+    position: node.position,
+    data: {
+      kind: node.kind,
+      label: (
+        <div className="grid gap-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-ink">{node.label}</span>
+            <span className={kindBadgeClass(node)}>{node.kind}</span>
+          </div>
+          <span className="font-mono text-[10px] text-steel">{node.file || node.package}</span>
+        </div>
+      ),
+    },
+    className: nodeClassName(node, selected),
+  };
+}
+
+function kindBadgeClass(node: GraphNode): string {
+  if (node.kind === "external") {
+    return "rounded bg-orange-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-signal";
+  }
+  if (node.kind === "unresolved") {
+    return "rounded bg-red-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-signal";
+  }
+  if (node.kind === "method") {
+    return "rounded bg-green-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-moss";
+  }
+  return "rounded bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-blue-700";
+}
+
+function toFlowEdge(edge: Graph["edges"][number], highlighted: boolean): FlowEdge {
+  const stroke = edgeStroke(edge.resolution);
+  return {
+    id: edge.id,
+    source: edge.from,
+    target: edge.to,
+    type: "smoothstep",
+    animated: edge.resolution === "interface" || edge.resolution === "unresolved" || highlighted,
+    label: edge.candidate ? "candidate" : edge.resolution,
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: stroke,
+      width: 16,
+      height: 16,
+    },
+    style: {
+      stroke,
+      strokeWidth: highlighted ? 3 : 1.6,
+      strokeDasharray: edge.candidate || edge.resolution === "interface" ? "6 4" : undefined,
+      opacity: highlighted ? 1 : 0.78,
+    },
+    labelStyle: {
+      fill: highlighted ? "#1f2933" : "#52616b",
+      fontSize: 11,
+      fontWeight: 700,
+    },
+    labelBgStyle: {
+      fill: "#ffffff",
+      fillOpacity: 0.92,
+    },
+    labelBgPadding: [4, 2],
+  };
+}
+
+function edgeStroke(resolution: string): string {
+  switch (resolution) {
+    case "resolved":
+      return "#58745f";
+    case "interface":
+      return "#7c5fb3";
+    case "external":
+      return "#d97706";
+    case "unresolved":
+      return "#d95f3d";
+    default:
+      return "#52616b";
+  }
+}
+
+function miniMapNodeColor(kind: unknown): string {
+  switch (kind) {
+    case "method":
+      return "#8fb199";
+    case "external":
+      return "#f2b277";
+    case "unresolved":
+      return "#e68a73";
+    default:
+      return "#91b7d9";
+  }
 }
 
 function SelectedNodeOverlay({ node, modulePrefix }: { node: GraphNode | null; modulePrefix: string }) {

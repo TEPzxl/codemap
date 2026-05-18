@@ -12,25 +12,26 @@ export function layoutGraph(graph: Graph): PositionedNode[] {
   const buckets = new Map<number, GraphNode[]>();
 
   for (const node of graph.nodes) {
-    const depth = depthByNode.get(node.id) ?? 0;
+    const depth = depthByNode.get(node.id) ?? fallbackDepth(node, depthByNode);
     const bucket = buckets.get(depth) ?? [];
     bucket.push(node);
     buckets.set(depth, bucket);
   }
 
   for (const bucket of buckets.values()) {
-    bucket.sort((a, b) => a.label.localeCompare(b.label));
+    bucket.sort(compareNodes);
   }
 
-  return graph.nodes.map((node) => {
-    const depth = depthByNode.get(node.id) ?? 0;
+  return [...graph.nodes].sort(compareNodes).map((node) => {
+    const depth = depthByNode.get(node.id) ?? fallbackDepth(node, depthByNode);
     const bucket = buckets.get(depth) ?? [];
     const index = bucket.findIndex((item) => item.id === node.id);
+    const centeredIndex = Math.max(index, 0) - (bucket.length - 1) / 2;
     return {
       ...node,
       position: {
-        x: depth * 310,
-        y: Math.max(index, 0) * 140,
+        x: depth * 360 + 80,
+        y: centeredIndex * 170 + 300,
       },
     };
   });
@@ -61,4 +62,24 @@ function computeDepths(entry: string, edges: Edge[]): Map<string, number> {
     }
   }
   return depths;
+}
+
+function fallbackDepth(node: GraphNode, depthByNode: Map<string, number>): number {
+  if (node.id === node.package || depthByNode.size === 0) {
+    return 0;
+  }
+  return Math.max(...depthByNode.values(), 0) + 1;
+}
+
+function compareNodes(a: GraphNode, b: GraphNode): number {
+  if (a.package !== b.package) {
+    return a.package.localeCompare(b.package);
+  }
+  if (a.kind !== b.kind) {
+    return a.kind.localeCompare(b.kind);
+  }
+  if (a.label !== b.label) {
+    return a.label.localeCompare(b.label);
+  }
+  return a.id.localeCompare(b.id);
 }
