@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/tepzxl/codemap/internal/analyzer"
 	graphmodel "github.com/tepzxl/codemap/internal/graph"
 	"github.com/tepzxl/codemap/internal/source"
 )
@@ -29,6 +30,19 @@ func (p *Project) handleSymbols(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"symbols":  p.Symbols,
 		"warnings": p.Warnings,
+	})
+}
+
+func (p *Project) handleEntrypoints(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"entrypoints": p.Entrypoints,
+		"warnings":    p.Warnings,
+		"note":        analyzer.EntrypointDiscoveryNote,
 	})
 }
 

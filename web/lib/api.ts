@@ -1,5 +1,6 @@
 import type {
   CallsiteSnippet,
+  EntrypointsResponse,
   Graph,
   GraphDirection,
   PackageGraph,
@@ -72,6 +73,10 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function fetchSymbols(): Promise<SymbolsResponse> {
   return requestJSON<SymbolsResponse>("/api/symbols");
+}
+
+export function fetchEntrypoints(): Promise<EntrypointsResponse> {
+  return requestJSON<EntrypointsResponse>("/api/entrypoints");
 }
 
 export function fetchMeta(): Promise<ProjectMeta> {

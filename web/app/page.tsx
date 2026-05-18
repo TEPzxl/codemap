@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { EntrypointsPanel } from "@/components/EntrypointsPanel";
 import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
 import { GraphModeToggle, type GraphMode } from "@/components/GraphModeToggle";
 import { GraphView } from "@/components/GraphView";
@@ -14,6 +15,7 @@ import { Toolbar } from "@/components/Toolbar";
 import { WarningPanel } from "@/components/WarningPanel";
 import {
   fetchCallsite,
+  fetchEntrypoints,
   fetchGraph,
   fetchMeta,
   fetchPackageGraph,
@@ -30,6 +32,7 @@ import { summarizeGraph } from "@/lib/graphSummary";
 import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
 import type {
   Edge as GraphEdge,
+  Entrypoint,
   Graph,
   GraphDirection,
   Node as GraphNode,
@@ -44,6 +47,8 @@ import type {
 
 export default function Home() {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
+  const [entrypoints, setEntrypoints] = useState<Entrypoint[]>([]);
+  const [entrypointNote, setEntrypointNote] = useState("");
   const [entry, setEntry] = useState("main.main");
   const [rootEntry, setRootEntry] = useState("main.main");
   const [depth, setDepth] = useState(5);
@@ -100,14 +105,21 @@ export default function Home() {
     setSymbolsLoading(true);
     setAPIError(null);
     try {
-      const [symbolResponse, warningResponse, metaResponse] = await Promise.all([fetchSymbols(), fetchWarnings(), fetchMeta()]);
+      const [symbolResponse, entrypointResponse, warningResponse, metaResponse] = await Promise.all([
+        fetchSymbols(),
+        fetchEntrypoints(),
+        fetchWarnings(),
+        fetchMeta(),
+      ]);
       setSymbols(symbolResponse.symbols);
-      setWarnings([...symbolResponse.warnings, ...warningResponse.warnings]);
+      setEntrypoints(entrypointResponse.entrypoints);
+      setEntrypointNote(entrypointResponse.note);
+      setWarnings([...symbolResponse.warnings, ...entrypointResponse.warnings, ...warningResponse.warnings]);
       setMeta(metaResponse);
 
       if (applyInitialState) {
         const initialState = readInitialGraphState();
-        const main = symbolResponse.symbols.find((symbol) => symbol.id.endsWith(".main"));
+        const main = entrypointResponse.entrypoints.find((candidate) => candidate.reasons.includes("main-function"));
         const nextEntry = initialState.entry ?? main?.id ?? symbolResponse.symbols[0]?.id ?? "main.main";
         const nextDepth = initialState.depth ?? 5;
         const nextDirection = initialState.direction ?? "downstream";
@@ -568,6 +580,14 @@ export default function Home() {
           <aside className="grid min-h-0 min-w-0 content-start gap-5 overflow-y-auto overflow-x-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
             <ProjectMetaPanel meta={meta} loading={rescanLoading} error={rescanError} onRescan={handleRescan} />
             <GraphModeToggle mode={graphMode} onChange={changeGraphMode} />
+            <EntrypointsPanel
+              entrypoints={entrypoints}
+              note={entrypointNote}
+              modulePrefix={modulePrefix}
+              loading={symbolsLoading}
+              disabled={graphLoading}
+              onSelectEntrypoint={selectSymbol}
+            />
             <GraphSummaryPanel
               entry={graph?.entry ?? visibleGraphRequest.entry}
               request={visibleGraphRequest}

@@ -111,9 +111,10 @@ http://localhost:8080
 9. 使用 `Path search` 查询两个 symbols 之间的调用路径，结果会切换为 path graph。
 10. 切换到 `Package graph` 查看 package-level call overview，并点击 package 节点设置 package filter。
 11. 双击 package 节点切回 function graph 并按该 package 过滤。
-12. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
-13. 点击 `Copy view URL` 复制当前视图链接。
-14. 修改本地源码后点击 `Rescan` 刷新索引。
+12. 在 `Entrypoints` 列表中点击候选入口，自动加载对应 graph。
+13. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
+14. 点击 `Copy view URL` 复制当前视图链接。
+15. 修改本地源码后点击 `Rescan` 刷新索引。
 
 更多说明见：[docs/demo/README.md](docs/demo/README.md)。
 
@@ -146,6 +147,12 @@ go run ./cmd/codemap symbols ./examples/layered-service
 
 ```bash
 go run ./cmd/codemap calls ./examples/layered-service
+```
+
+发现候选入口：
+
+```bash
+go run ./cmd/codemap entrypoints ./examples/layered-service
 ```
 
 构建调用图：
@@ -240,6 +247,12 @@ Symbols：
 
 ```bash
 curl -s http://localhost:8080/api/symbols
+```
+
+Entrypoints：
+
+```bash
+curl -s http://localhost:8080/api/entrypoints
 ```
 
 Graph：
@@ -382,5 +395,6 @@ Local Go repo
 - interface candidate expansion 是静态保守候选，不等同于运行时真实分派。
 - 通过函数变量触发的动态调用可能会标记为 `unresolved`。
 - 调用图是静态近似结果，不是运行时精确调用链。
+- Entrypoint discovery 是基于 main/exported/name/handler/goroutine 的启发式推荐，不保证完整或绝对准确。
 - 标准库和第三方调用默认隐藏，除非显式启用。
 - 不包含数据库、编辑器插件或 LLM 解释层。

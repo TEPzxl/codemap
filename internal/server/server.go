@@ -24,6 +24,7 @@ type Project struct {
 	Symbols       []analyzer.Symbol
 	Calls         []analyzer.Call
 	ExpandedCalls []analyzer.Call
+	Entrypoints   []analyzer.Entrypoint
 	Warnings      []analyzer.AnalyzeWarning
 	Packages      int
 	AnalyzedAt    time.Time
@@ -74,6 +75,10 @@ func LoadProject(rootPath string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
+	entrypoints, err := analyzer.DiscoverEntrypoints(loadResult, symbols)
+	if err != nil {
+		return nil, err
+	}
 
 	symbolByID := make(map[string]analyzer.Symbol, len(symbols))
 	for _, symbol := range symbols {
@@ -91,6 +96,7 @@ func LoadProject(rootPath string) (*Project, error) {
 		Symbols:       symbols,
 		Calls:         calls,
 		ExpandedCalls: expandedCalls,
+		Entrypoints:   entrypoints,
 		Warnings:      loadResult.Warnings,
 		Packages:      len(loadResult.Packages),
 		AnalyzedAt:    time.Now(),
@@ -104,6 +110,7 @@ func NewHandler(project *Project) http.Handler {
 	mux.HandleFunc("/api/health", project.handleHealth)
 	mux.HandleFunc("/api/meta", project.handleMeta)
 	mux.HandleFunc("/api/rescan", project.handleRescan)
+	mux.HandleFunc("/api/entrypoints", project.handleEntrypoints)
 	mux.HandleFunc("/api/symbols", project.handleSymbols)
 	mux.HandleFunc("/api/graph", project.handleGraph)
 	mux.HandleFunc("/api/package-graph", project.handlePackageGraph)
@@ -145,6 +152,7 @@ func (p *Project) Rescan() (ProjectMeta, error) {
 	p.Symbols = next.Symbols
 	p.Calls = next.Calls
 	p.ExpandedCalls = next.ExpandedCalls
+	p.Entrypoints = next.Entrypoints
 	p.Warnings = next.Warnings
 	p.Packages = next.Packages
 	p.AnalyzedAt = next.AnalyzedAt

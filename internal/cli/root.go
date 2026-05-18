@@ -14,6 +14,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "calls":
 		return runCalls(args[1:], stdout, stderr)
+	case "entrypoints":
+		return runEntrypoints(args[1:], stdout, stderr)
 	case "graph":
 		return runGraph(args[1:], stdout, stderr)
 	case "packages":
@@ -41,6 +43,7 @@ func printRootHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Available Commands:")
 	fmt.Fprintln(w, "  calls   list go function and method calls under a local path")
+	fmt.Fprintln(w, "  entrypoints   list heuristic graph entrypoint candidates")
 	fmt.Fprintln(w, "  graph   build a depth-limited call graph from an entry symbol")
 	fmt.Fprintln(w, "  packages   build a package-level call overview")
 	fmt.Fprintln(w, "  path   find call paths between two symbols")

@@ -100,6 +100,28 @@ func TestAPIHandlers(t *testing.T) {
 		requireSymbolID(t, got.Symbols, "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main")
 	})
 
+	t.Run("entrypoints", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/entrypoints", nil)
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+		}
+		var got struct {
+			Entrypoints []analyzer.Entrypoint `json:"entrypoints"`
+			Note        string                `json:"note"`
+		}
+		decodeJSON(t, rr, &got)
+		if got.Note == "" || len(got.Entrypoints) == 0 {
+			t.Fatalf("expected entrypoints and heuristic note, got %#v", got)
+		}
+		if got.Entrypoints[0].ID != "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main" {
+			t.Fatalf("first entrypoint = %q, want main", got.Entrypoints[0].ID)
+		}
+		requireServerEntrypointReason(t, got.Entrypoints, "github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser", "receiver:Handler")
+	})
+
 	t.Run("meta", func(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/meta", nil)
@@ -882,6 +904,23 @@ func requireServerGraphWarning(t *testing.T, output graphmodel.Graph, code strin
 		}
 	}
 	t.Fatalf("missing graph warning %q in %#v", code, output.Warnings)
+}
+
+func requireServerEntrypointReason(t *testing.T, entrypoints []analyzer.Entrypoint, id string, reason string) {
+	t.Helper()
+
+	for _, entrypoint := range entrypoints {
+		if entrypoint.ID != id {
+			continue
+		}
+		for _, gotReason := range entrypoint.Reasons {
+			if gotReason == reason {
+				return
+			}
+		}
+		t.Fatalf("entrypoint %q missing reason %q in %#v", id, reason, entrypoint.Reasons)
+	}
+	t.Fatalf("missing entrypoint %q in %#v", id, entrypoints)
 }
 
 func requireServerPackageNode(t *testing.T, output graphmodel.PackageGraph, id string) {

@@ -32,6 +32,21 @@ export interface PackageEdge {
   calls: number;
 }
 
+export interface Entrypoint {
+  id: string;
+  label: string;
+  package: string;
+  file: string;
+  kind: "function" | "method";
+  reasons: string[];
+}
+
+export interface EntrypointsResponse {
+  entrypoints: Entrypoint[];
+  warnings: Warning[];
+  note: string;
+}
+
 export interface PathResult {
   from: string;
   to: string;

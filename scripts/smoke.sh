@@ -42,6 +42,8 @@ func main() {
 		requireArray(payload, "symbols")
 	case "calls":
 		requireArray(payload, "calls")
+	case "entrypoints":
+		requireArray(payload, "entrypoints")
 	case "graph":
 		requireString(payload, "entry")
 		requireArray(payload, "nodes")
@@ -92,5 +94,6 @@ run_json scan layered-service-scan scan ./examples/layered-service
 run_json scan interface-call-scan scan ./examples/interface-call
 run_json symbols simple-symbols symbols ./examples/simple
 run_json calls simple-calls calls ./examples/simple
+run_json entrypoints layered-service-entrypoints entrypoints ./examples/layered-service
 run_json graph layered-service-graph graph ./examples/layered-service --entry main.main --depth 5
 run_json packages layered-service-packages packages ./examples/layered-service --entry main.main --depth 5
