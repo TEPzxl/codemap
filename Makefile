@@ -10,9 +10,10 @@ WEB_DIR := web
 WEB_OUT := $(WEB_DIR)/out
 SERVER_STATIC := internal/server/static
 BIN_DIR := bin
+DIST_DIR := dist
 PNPM := corepack pnpm
 
-.PHONY: help install test check smoke test-go test-web web-lint web-typecheck lint-web build-web web-build generate-golden verify-golden build demo dev-api dev-web dev
+.PHONY: help install test check smoke test-go test-web web-lint web-typecheck lint-web build-web web-build generate-golden verify-golden build release demo dev-api dev-web dev
 
 help:
 	@echo "codemap make targets"
@@ -29,6 +30,7 @@ help:
 	@echo "  make web-typecheck  Run frontend TypeScript check"
 	@echo "  make web-build   Build Next static export and stage assets for Go embed"
 	@echo "  make build       Build Go binary into ./bin/codemap"
+	@echo "  make release     Build release binaries into ./dist"
 	@echo "  make demo        Run ./bin/codemap serve with the demo fixture"
 	@echo "  make dev-api     Start Go API server"
 	@echo "  make dev-web     Start Next dev server"
@@ -79,6 +81,13 @@ web-build: build-web
 build:
 	mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/codemap ./cmd/codemap
+
+release: web-build
+	rm -rf $(DIST_DIR)
+	mkdir -p $(DIST_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(DIST_DIR)/codemap-linux-amd64 ./cmd/codemap
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(DIST_DIR)/codemap-darwin-arm64 ./cmd/codemap
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(DIST_DIR)/codemap-darwin-amd64 ./cmd/codemap
 
 demo: build
 	./$(BIN_DIR)/codemap serve $(API_PATH) --port $(API_PORT)
