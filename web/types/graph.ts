@@ -64,6 +64,22 @@ export interface WarningsResponse {
   warnings: Warning[];
 }
 
+export interface ProjectMeta {
+  root: string;
+  module: string;
+  packages: number;
+  symbols: number;
+  calls: number;
+  warnings: number;
+  analyzed_at: string;
+  analysis_duration_ms: number;
+  version: string;
+}
+
+export interface RescanResponse {
+  meta: ProjectMeta;
+}
+
 export interface SourceSnippet {
   node_id: string;
   file: string;

@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/tepzxl/codemap/internal/analyzer"
 	graphmodel "github.com/tepzxl/codemap/internal/graph"
@@ -57,6 +59,27 @@ func TestAPIHandlers(t *testing.T) {
 			t.Fatal("expected symbols response to include symbols")
 		}
 		requireSymbolID(t, got.Symbols, "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main")
+	})
+
+	t.Run("meta", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/meta", nil)
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+		}
+		var got ProjectMeta
+		decodeJSON(t, rr, &got)
+		if got.Root == "" {
+			t.Fatal("expected root in meta response")
+		}
+		if got.Packages == 0 || got.Symbols == 0 || got.Calls == 0 {
+			t.Fatalf("expected non-zero counts, got %#v", got)
+		}
+		if got.AnalyzedAt == "" || got.AnalysisDurationMS < 0 || got.Version == "" {
+			t.Fatalf("expected analysis metadata, got %#v", got)
+		}
 	})
 
 	t.Run("graph", func(t *testing.T) {
@@ -176,6 +199,97 @@ func TestAPIHandlers(t *testing.T) {
 			t.Fatal("expected warnings field to be present")
 		}
 	})
+}
+
+func TestAPIRescan(t *testing.T) {
+	project := loadTestProject(t)
+	handler := NewHandler(project)
+
+	before := requestMeta(t, handler)
+	time.Sleep(time.Millisecond)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/rescan", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Meta ProjectMeta `json:"meta"`
+	}
+	decodeJSON(t, rr, &got)
+	if got.Meta.Symbols != before.Symbols || got.Meta.Calls != before.Calls || got.Meta.Packages != before.Packages {
+		t.Fatalf("rescan changed stable counts unexpectedly: before=%#v after=%#v", before, got.Meta)
+	}
+	if got.Meta.AnalyzedAt == before.AnalyzedAt {
+		t.Fatalf("expected analyzed_at to update, before=%q after=%q", before.AnalyzedAt, got.Meta.AnalyzedAt)
+	}
+
+	after := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5")
+	if len(after.Nodes) == 0 || len(after.Edges) == 0 {
+		t.Fatalf("graph unavailable after rescan: %#v", after)
+	}
+}
+
+func TestAPIRescanFailureKeepsOldIndex(t *testing.T) {
+	project := loadTestProject(t)
+	project.loadProject = func(string) (*Project, error) {
+		return nil, os.ErrNotExist
+	}
+	handler := NewHandler(project)
+	before := requestMeta(t, handler)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/rescan", nil)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body = %s", rr.Code, http.StatusInternalServerError, rr.Body.String())
+	}
+	var errBody struct {
+		Error string `json:"error"`
+	}
+	decodeJSON(t, rr, &errBody)
+	if errBody.Error == "" {
+		t.Fatalf("expected JSON error, got %s", rr.Body.String())
+	}
+
+	after := requestMeta(t, handler)
+	if after.Symbols != before.Symbols || after.Calls != before.Calls || after.Packages != before.Packages || after.AnalyzedAt != before.AnalyzedAt {
+		t.Fatalf("old index was modified after failed rescan: before=%#v after=%#v", before, after)
+	}
+	graph := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5")
+	if len(graph.Nodes) == 0 || len(graph.Edges) == 0 {
+		t.Fatalf("old graph unavailable after failed rescan: %#v", graph)
+	}
+}
+
+func TestAPIConcurrentRequestsDuringRescan(t *testing.T) {
+	project := loadTestProject(t)
+	handler := NewHandler(project)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				_ = requestMeta(t, handler)
+				_ = requestGraph(t, handler, "/api/graph?entry=main.main&depth=5")
+			}
+		}()
+	}
+
+	for i := 0; i < 3; i++ {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/rescan", nil)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("rescan status = %d, body = %s", rr.Code, rr.Body.String())
+		}
+	}
+	wg.Wait()
 }
 
 func TestAPIGraphExpandInterface(t *testing.T) {
@@ -339,6 +453,7 @@ func TestAPIErrors(t *testing.T) {
 		{name: "missing callsite edge", path: "/api/callsite?entry=main.main&depth=5", want: http.StatusBadRequest},
 		{name: "unknown callsite edge", path: "/api/callsite?entry=main.main&depth=5&edge_id=edge-missing", want: http.StatusNotFound},
 		{name: "invalid callsite bool", path: "/api/callsite?entry=main.main&edge_id=edge-000001&show_external=maybe", want: http.StatusBadRequest},
+		{name: "rescan requires post", path: "/api/rescan", want: http.StatusMethodNotAllowed},
 		{name: "unknown endpoint", path: "/api/not-found", want: http.StatusNotFound},
 	}
 
@@ -493,6 +608,20 @@ func requestGraph(t *testing.T, handler http.Handler, path string) graphmodel.Gr
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 	var got graphmodel.Graph
+	decodeJSON(t, rr, &got)
+	return got
+}
+
+func requestMeta(t *testing.T, handler http.Handler) ProjectMeta {
+	t.Helper()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/meta", nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	var got ProjectMeta
 	decodeJSON(t, rr, &got)
 	return got
 }

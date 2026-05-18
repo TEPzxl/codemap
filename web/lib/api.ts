@@ -1,4 +1,12 @@
-import type { CallsiteSnippet, Graph, SourceSnippet, SymbolsResponse, WarningsResponse } from "@/types/graph";
+import type {
+  CallsiteSnippet,
+  Graph,
+  ProjectMeta,
+  RescanResponse,
+  SourceSnippet,
+  SymbolsResponse,
+  WarningsResponse,
+} from "@/types/graph";
 
 export interface GraphRequest {
   entry: string;
@@ -10,10 +18,12 @@ export interface GraphRequest {
   packagePrefix?: string;
 }
 
-async function requestJSON<T>(path: string): Promise<T> {
+async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
+    ...init,
     headers: {
       Accept: "application/json",
+      ...init?.headers,
     },
   });
 
@@ -35,6 +45,14 @@ async function requestJSON<T>(path: string): Promise<T> {
 
 export function fetchSymbols(): Promise<SymbolsResponse> {
   return requestJSON<SymbolsResponse>("/api/symbols");
+}
+
+export function fetchMeta(): Promise<ProjectMeta> {
+  return requestJSON<ProjectMeta>("/api/meta");
+}
+
+export function rescanProject(): Promise<RescanResponse> {
+  return requestJSON<RescanResponse>("/api/rescan", { method: "POST" });
 }
 
 export function graphURL(options: GraphRequest): string {

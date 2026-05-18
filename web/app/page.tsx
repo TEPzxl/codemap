@@ -3,13 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { GraphView } from "@/components/GraphView";
+import { ProjectMetaPanel } from "@/components/ProjectMetaPanel";
 import { SourcePanel } from "@/components/SourcePanel";
 import { SymbolSearch } from "@/components/SymbolSearch";
 import { Toolbar } from "@/components/Toolbar";
 import { WarningPanel } from "@/components/WarningPanel";
-import { fetchCallsite, fetchGraph, fetchSource, fetchSymbols, fetchWarnings, type GraphRequest } from "@/lib/api";
+import {
+  fetchCallsite,
+  fetchGraph,
+  fetchMeta,
+  fetchSource,
+  fetchSymbols,
+  fetchWarnings,
+  rescanProject,
+  type GraphRequest,
+} from "@/lib/api";
 import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
-import type { Edge as GraphEdge, Graph, Node as GraphNode, SourceView, SymbolInfo, Warning } from "@/types/graph";
+import type { Edge as GraphEdge, Graph, Node as GraphNode, ProjectMeta, SourceView, SymbolInfo, Warning } from "@/types/graph";
 
 export default function Home() {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
@@ -24,13 +34,16 @@ export default function Home() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<Warning[]>([]);
+  const [meta, setMeta] = useState<ProjectMeta | null>(null);
   const [source, setSource] = useState<SourceView | null>(null);
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [graphLoading, setGraphLoading] = useState(false);
   const [sourceLoading, setSourceLoading] = useState(false);
+  const [rescanLoading, setRescanLoading] = useState(false);
   const [apiError, setAPIError] = useState<string | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [rescanError, setRescanError] = useState<string | null>(null);
   const graphLoadedRef = useRef(false);
   const graphRequestRef = useRef<GraphRequest>({
     entry: "main.main",
@@ -41,19 +54,18 @@ export default function Home() {
   const selectedEdgeRef = useRef<GraphEdge | null>(null);
   const sourceRef = useRef<SourceView | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  const modulePrefix = inferModulePrefix(symbols);
 
-    async function loadProjectIndex() {
-      setSymbolsLoading(true);
-      setAPIError(null);
-      try {
-        const [symbolResponse, warningResponse] = await Promise.all([fetchSymbols(), fetchWarnings()]);
-        if (!active) {
-          return;
-        }
-        setSymbols(symbolResponse.symbols);
-        setWarnings([...symbolResponse.warnings, ...warningResponse.warnings]);
+  const loadProjectIndex = useCallback(async (applyInitialState: boolean) => {
+    setSymbolsLoading(true);
+    setAPIError(null);
+    try {
+      const [symbolResponse, warningResponse, metaResponse] = await Promise.all([fetchSymbols(), fetchWarnings(), fetchMeta()]);
+      setSymbols(symbolResponse.symbols);
+      setWarnings([...symbolResponse.warnings, ...warningResponse.warnings]);
+      setMeta(metaResponse);
+
+      if (applyInitialState) {
         const initialState = readInitialGraphState();
         const main = symbolResponse.symbols.find((symbol) => symbol.id.endsWith(".main"));
         setEntry(initialState.entry ?? main?.id ?? symbolResponse.symbols[0]?.id ?? "main.main");
@@ -63,24 +75,20 @@ export default function Home() {
         setShowUnresolved(initialState.showUnresolved ?? false);
         setShowInterface(initialState.showInterface ?? false);
         setExpandInterface(initialState.expandInterface ?? false);
-      } catch (error) {
-        if (active) {
-          setAPIError(error instanceof Error ? error.message : "Failed to load symbols");
-        }
-      } finally {
-        if (active) {
-          setSymbolsLoading(false);
-        }
       }
+    } catch (error) {
+      setAPIError(error instanceof Error ? error.message : "Failed to load project index");
+    } finally {
+      setSymbolsLoading(false);
     }
-
-    loadProjectIndex();
-    return () => {
-      active = false;
-    };
   }, []);
 
-  const modulePrefix = inferModulePrefix(symbols);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void loadProjectIndex(true);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [loadProjectIndex]);
 
   const buildGraphRequest = useCallback(
     (entryOverride?: string): GraphRequest => ({
@@ -198,6 +206,23 @@ export default function Home() {
     void loadGraph({ entryOverride: resolvedEntry });
   }
 
+  async function handleRescan() {
+    setRescanLoading(true);
+    setRescanError(null);
+    try {
+      const response = await rescanProject();
+      setMeta(response.meta);
+      await loadProjectIndex(false);
+      if (graphLoadedRef.current) {
+        await loadGraph({ preserveSelection: true });
+      }
+    } catch (error) {
+      setRescanError(error instanceof Error ? error.message : "Failed to rescan project");
+    } finally {
+      setRescanLoading(false);
+    }
+  }
+
   async function loadSource(node: GraphNode) {
     setSelectedNode(node);
     selectedEdgeRef.current = null;
@@ -246,6 +271,7 @@ export default function Home() {
 
       <section className="grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(420px,460px)_minmax(0,1fr)]">
         <aside className="grid min-w-0 content-start gap-5 overflow-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
+          <ProjectMetaPanel meta={meta} loading={rescanLoading} error={rescanError} onRescan={handleRescan} />
           <SymbolSearch
             symbols={symbols}
             value={entry}

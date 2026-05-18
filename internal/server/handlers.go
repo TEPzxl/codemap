@@ -24,10 +24,32 @@ func (p *Project) handleSymbols(w http.ResponseWriter, r *http.Request) {
 	if !requireGET(w, r) {
 		return
 	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"symbols":  p.Symbols,
 		"warnings": p.Warnings,
 	})
+}
+
+func (p *Project) handleMeta(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+	writeJSON(w, http.StatusOK, p.Meta())
+}
+
+func (p *Project) handleRescan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	meta, err := p.Rescan()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"meta": meta})
 }
 
 func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
@@ -131,13 +153,13 @@ func (p *Project) handleSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	symbol, ok := p.symbolByID[nodeID]
+	root, symbol, ok := p.sourceSymbol(nodeID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "node_id not found")
 		return
 	}
 
-	snippet, err := source.ReadSnippet(p.Root, source.Location{
+	snippet, err := source.ReadSnippet(root, source.Location{
 		NodeID:    symbol.ID,
 		File:      symbol.File,
 		StartLine: symbol.StartLine,
@@ -170,12 +192,13 @@ func (p *Project) handleCallsite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	root := p.root()
 
 	for _, edge := range graph.Edges {
 		if edge.ID != edgeID {
 			continue
 		}
-		snippet, err := source.ReadCallsite(p.Root, source.CallsiteLocation{
+		snippet, err := source.ReadCallsite(root, source.CallsiteLocation{
 			EdgeID:        edge.ID,
 			File:          edge.Callsite.File,
 			Line:          edge.Callsite.Line,
@@ -198,6 +221,8 @@ func (p *Project) handleWarnings(w http.ResponseWriter, r *http.Request) {
 	if !requireGET(w, r) {
 		return
 	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{"warnings": p.Warnings})
 }
 
