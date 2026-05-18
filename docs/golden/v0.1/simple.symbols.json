@@ -1,0 +1,36 @@
+{
+  "root": "./examples/simple",
+  "symbols": [
+    {
+      "end_line": 7,
+      "file": "main.go",
+      "id": "github.com/tepzxl/codemap/examples/simple.main",
+      "kind": "function",
+      "label": "main",
+      "name": "main",
+      "package": "github.com/tepzxl/codemap/examples/simple",
+      "start_line": 5
+    },
+    {
+      "end_line": 7,
+      "file": "app/app.go",
+      "id": "github.com/tepzxl/codemap/examples/simple/app.Run",
+      "kind": "function",
+      "label": "Run",
+      "name": "Run",
+      "package": "github.com/tepzxl/codemap/examples/simple/app",
+      "start_line": 5
+    },
+    {
+      "end_line": 8,
+      "file": "service/user.go",
+      "id": "github.com/tepzxl/codemap/examples/simple/service.CreateUser",
+      "kind": "function",
+      "label": "CreateUser",
+      "name": "CreateUser",
+      "package": "github.com/tepzxl/codemap/examples/simple/service",
+      "start_line": 3
+    }
+  ],
+  "warnings": []
+}

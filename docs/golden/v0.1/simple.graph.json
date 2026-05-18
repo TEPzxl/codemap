@@ -1,0 +1,62 @@
+{
+  "edges": [
+    {
+      "callsite": {
+        "column": 9,
+        "file": "main.go",
+        "line": 6
+      },
+      "from": "github.com/tepzxl/codemap/examples/simple.main",
+      "id": "edge-000001",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/simple/app.Run"
+    },
+    {
+      "callsite": {
+        "column": 20,
+        "file": "app/app.go",
+        "line": 6
+      },
+      "from": "github.com/tepzxl/codemap/examples/simple/app.Run",
+      "id": "edge-000002",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/simple/service.CreateUser"
+    }
+  ],
+  "entry": "github.com/tepzxl/codemap/examples/simple.main",
+  "nodes": [
+    {
+      "end_line": 7,
+      "file": "main.go",
+      "id": "github.com/tepzxl/codemap/examples/simple.main",
+      "is_external": false,
+      "kind": "function",
+      "label": "main",
+      "package": "github.com/tepzxl/codemap/examples/simple",
+      "start_line": 5
+    },
+    {
+      "end_line": 7,
+      "file": "app/app.go",
+      "id": "github.com/tepzxl/codemap/examples/simple/app.Run",
+      "is_external": false,
+      "kind": "function",
+      "label": "Run",
+      "package": "github.com/tepzxl/codemap/examples/simple/app",
+      "start_line": 5
+    },
+    {
+      "end_line": 8,
+      "file": "service/user.go",
+      "id": "github.com/tepzxl/codemap/examples/simple/service.CreateUser",
+      "is_external": false,
+      "kind": "function",
+      "label": "CreateUser",
+      "package": "github.com/tepzxl/codemap/examples/simple/service",
+      "start_line": 3
+    }
+  ],
+  "warnings": []
+}

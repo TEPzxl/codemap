@@ -1,0 +1,107 @@
+{
+  "edges": [
+    {
+      "callsite": {
+        "column": 44,
+        "file": "main.go",
+        "line": 9
+      },
+      "from": "github.com/tepzxl/codemap/examples/interface-call.main",
+      "id": "edge-000001",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/interface-call/repository.NewMemoryUserRepository"
+    },
+    {
+      "callsite": {
+        "column": 20,
+        "file": "main.go",
+        "line": 11
+      },
+      "from": "github.com/tepzxl/codemap/examples/interface-call.main",
+      "id": "edge-000003",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser"
+    },
+    {
+      "callsite": {
+        "column": 31,
+        "file": "main.go",
+        "line": 10
+      },
+      "from": "github.com/tepzxl/codemap/examples/interface-call.main",
+      "id": "edge-000002",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/interface-call/service.NewUserService"
+    },
+    {
+      "callsite": {
+        "column": 20,
+        "file": "service/user.go",
+        "line": 21
+      },
+      "from": "github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+      "id": "edge-000004",
+      "kind": "call",
+      "resolution": "interface",
+      "to": "github.com/tepzxl/codemap/examples/interface-call/service.UserRepository.Save"
+    }
+  ],
+  "entry": "github.com/tepzxl/codemap/examples/interface-call.main",
+  "nodes": [
+    {
+      "end_line": 12,
+      "file": "main.go",
+      "id": "github.com/tepzxl/codemap/examples/interface-call.main",
+      "is_external": false,
+      "kind": "function",
+      "label": "main",
+      "package": "github.com/tepzxl/codemap/examples/interface-call",
+      "start_line": 8
+    },
+    {
+      "end_line": 7,
+      "file": "repository/repo.go",
+      "id": "github.com/tepzxl/codemap/examples/interface-call/repository.NewMemoryUserRepository",
+      "is_external": false,
+      "kind": "function",
+      "label": "NewMemoryUserRepository",
+      "package": "github.com/tepzxl/codemap/examples/interface-call/repository",
+      "start_line": 5
+    },
+    {
+      "end_line": 22,
+      "file": "service/user.go",
+      "id": "github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+      "is_external": false,
+      "kind": "method",
+      "label": "UserService.CreateUser",
+      "package": "github.com/tepzxl/codemap/examples/interface-call/service",
+      "receiver": "*UserService",
+      "start_line": 17
+    },
+    {
+      "end_line": 15,
+      "file": "service/user.go",
+      "id": "github.com/tepzxl/codemap/examples/interface-call/service.NewUserService",
+      "is_external": false,
+      "kind": "function",
+      "label": "NewUserService",
+      "package": "github.com/tepzxl/codemap/examples/interface-call/service",
+      "start_line": 13
+    },
+    {
+      "end_line": 0,
+      "file": "",
+      "id": "github.com/tepzxl/codemap/examples/interface-call/service.UserRepository.Save",
+      "is_external": false,
+      "kind": "unresolved",
+      "label": "Save",
+      "package": "github.com/tepzxl/codemap/examples/interface-call/service.UserRepository",
+      "start_line": 0
+    }
+  ],
+  "warnings": []
+}

@@ -60,7 +60,14 @@ Run the full quality gate:
 make check
 ```
 
-`make check` runs Go tests, CLI smoke checks against the fixture projects, frontend lint, TypeScript checks, and the Next production build.
+`make check` runs Go tests, CLI smoke checks against the fixture projects, golden output verification, frontend lint, TypeScript checks, and the Next production build.
+
+Regenerate and verify v0.1 golden outputs:
+
+```bash
+make generate-golden
+make verify-golden
+```
 
 ## Quick Demo
 

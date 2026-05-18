@@ -12,7 +12,7 @@ SERVER_STATIC := internal/server/static
 BIN_DIR := bin
 PNPM := corepack pnpm
 
-.PHONY: help install test check smoke test-go test-web web-lint web-typecheck lint-web build-web web-build build demo dev-api dev-web dev
+.PHONY: help install test check smoke test-go test-web web-lint web-typecheck lint-web build-web web-build generate-golden verify-golden build demo dev-api dev-web dev
 
 help:
 	@echo "codemap make targets"
@@ -22,6 +22,8 @@ help:
 	@echo "  make check       Run Go tests, CLI smoke, frontend lint/typecheck/build"
 	@echo "  make smoke       Run CLI smoke tests against fixture projects"
 	@echo "  make test-go     Run go test ./..."
+	@echo "  make verify-golden  Verify CLI outputs against v0.1 golden files"
+	@echo "  make generate-golden  Regenerate v0.1 golden files"
 	@echo "  make test-web    Run frontend lint, typecheck, and build"
 	@echo "  make web-lint    Run frontend lint"
 	@echo "  make web-typecheck  Run frontend TypeScript check"
@@ -42,10 +44,16 @@ install:
 
 test: check
 
-check: test-go smoke web-lint web-typecheck build-web
+check: test-go smoke verify-golden web-lint web-typecheck build-web
 
 smoke:
 	./scripts/smoke.sh
+
+generate-golden:
+	./scripts/generate_golden.sh
+
+verify-golden:
+	./scripts/verify_golden.sh
 
 test-go:
 	go test ./...

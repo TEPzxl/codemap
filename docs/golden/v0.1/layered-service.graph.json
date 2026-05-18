@@ -1,0 +1,153 @@
+{
+  "edges": [
+    {
+      "callsite": {
+        "column": 18,
+        "file": "cmd/api/main.go",
+        "line": 7
+      },
+      "from": "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main",
+      "id": "edge-000004",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser"
+    },
+    {
+      "callsite": {
+        "column": 29,
+        "file": "cmd/api/main.go",
+        "line": 6
+      },
+      "from": "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main",
+      "id": "edge-000001",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/layered-service/internal/handler.NewUserHandler"
+    },
+    {
+      "callsite": {
+        "column": 29,
+        "file": "internal/handler/user.go",
+        "line": 16
+      },
+      "from": "github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser",
+      "id": "edge-000005",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser"
+    },
+    {
+      "callsite": {
+        "column": 34,
+        "file": "internal/handler/user.go",
+        "line": 11
+      },
+      "from": "github.com/tepzxl/codemap/examples/layered-service/internal/handler.NewUserHandler",
+      "id": "edge-000002",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/layered-service/internal/service.NewUserService"
+    },
+    {
+      "callsite": {
+        "column": 20,
+        "file": "internal/service/user.go",
+        "line": 16
+      },
+      "from": "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+      "id": "edge-000006",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save"
+    },
+    {
+      "callsite": {
+        "column": 37,
+        "file": "internal/service/user.go",
+        "line": 11
+      },
+      "from": "github.com/tepzxl/codemap/examples/layered-service/internal/service.NewUserService",
+      "id": "edge-000003",
+      "kind": "call",
+      "resolution": "resolved",
+      "to": "github.com/tepzxl/codemap/examples/layered-service/internal/repository.NewUserRepository"
+    }
+  ],
+  "entry": "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main",
+  "nodes": [
+    {
+      "end_line": 8,
+      "file": "cmd/api/main.go",
+      "id": "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main",
+      "is_external": false,
+      "kind": "function",
+      "label": "main",
+      "package": "github.com/tepzxl/codemap/examples/layered-service/cmd/api",
+      "start_line": 5
+    },
+    {
+      "end_line": 17,
+      "file": "internal/handler/user.go",
+      "id": "github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser",
+      "is_external": false,
+      "kind": "method",
+      "label": "UserHandler.CreateUser",
+      "package": "github.com/tepzxl/codemap/examples/layered-service/internal/handler",
+      "receiver": "*UserHandler",
+      "start_line": 15
+    },
+    {
+      "end_line": 13,
+      "file": "internal/handler/user.go",
+      "id": "github.com/tepzxl/codemap/examples/layered-service/internal/handler.NewUserHandler",
+      "is_external": false,
+      "kind": "function",
+      "label": "NewUserHandler",
+      "package": "github.com/tepzxl/codemap/examples/layered-service/internal/handler",
+      "start_line": 9
+    },
+    {
+      "end_line": 16,
+      "file": "internal/repository/user.go",
+      "id": "github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save",
+      "is_external": false,
+      "kind": "method",
+      "label": "UserRepository.Save",
+      "package": "github.com/tepzxl/codemap/examples/layered-service/internal/repository",
+      "receiver": "*UserRepository",
+      "start_line": 11
+    },
+    {
+      "end_line": 9,
+      "file": "internal/repository/user.go",
+      "id": "github.com/tepzxl/codemap/examples/layered-service/internal/repository.NewUserRepository",
+      "is_external": false,
+      "kind": "function",
+      "label": "NewUserRepository",
+      "package": "github.com/tepzxl/codemap/examples/layered-service/internal/repository",
+      "start_line": 7
+    },
+    {
+      "end_line": 17,
+      "file": "internal/service/user.go",
+      "id": "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+      "is_external": false,
+      "kind": "method",
+      "label": "UserService.CreateUser",
+      "package": "github.com/tepzxl/codemap/examples/layered-service/internal/service",
+      "receiver": "*UserService",
+      "start_line": 15
+    },
+    {
+      "end_line": 13,
+      "file": "internal/service/user.go",
+      "id": "github.com/tepzxl/codemap/examples/layered-service/internal/service.NewUserService",
+      "is_external": false,
+      "kind": "function",
+      "label": "NewUserService",
+      "package": "github.com/tepzxl/codemap/examples/layered-service/internal/service",
+      "start_line": 9
+    }
+  ],
+  "warnings": []
+}
