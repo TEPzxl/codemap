@@ -65,6 +65,10 @@ curl -s -X POST http://localhost:8080/api/rescan | python -m json.tool
 
 ![codemap UI](codemap-ui.png)
 
+## Real Project Baseline
+
+真实项目 demo 和 v0.3 baseline 记录见：[real-projects.md](real-projects.md)。
+
 ## Current Limits
 
 - Only local Go projects are supported.

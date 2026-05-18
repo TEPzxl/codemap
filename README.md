@@ -112,6 +112,15 @@ http://localhost:8080
 
 ![codemap UI screenshot](docs/demo/codemap-ui.png)
 
+## Real Project Demo
+
+v0.3 的主题是 **Focused Graph Exploration**。`codemap` 已用两个真实 Go 项目建立 baseline：
+
+- `contentflow`：28 packages、345 symbols、1572 calls、0 warnings。
+- `raft-kv-extended`：7 packages、161 symbols、753 calls、0 warnings。
+
+真实项目从 `main` 入口展开时会快速形成更密的调用图，因此 v0.3 会围绕聚焦入口、路径和 package 的大图探索体验继续推进。详细记录见：[docs/demo/real-projects.md](docs/demo/real-projects.md)。
+
 ## CLI 示例
 
 扫描 packages：
