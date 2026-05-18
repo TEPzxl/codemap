@@ -2,6 +2,8 @@ export type NodeKind = "function" | "method" | "external" | "unresolved";
 
 export type EdgeResolution = "resolved" | "interface" | "external" | "unresolved";
 
+export type GraphDirection = "downstream" | "upstream" | "both";
+
 export interface Graph {
   entry: string;
   nodes: Node[];

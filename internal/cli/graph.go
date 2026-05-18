@@ -21,6 +21,7 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 	showUnresolved := fs.Bool("show-unresolved", false, "include unresolved calls")
 	showInterface := fs.Bool("show-interface", false, "include interface calls")
 	expandInterface := fs.Bool("expand-interface", false, "include candidate concrete implementations for interface calls")
+	direction := fs.String("direction", string(graphmodel.DirectionDownstream), "graph traversal direction: downstream, upstream, or both")
 	var packagePrefixes stringListFlag
 	fs.Var(&packagePrefixes, "package", "include only graph nodes whose package has this prefix; repeatable")
 	nodeLimit := fs.Int("node-limit", 0, "maximum graph nodes to return; 0 means unlimited")
@@ -31,6 +32,11 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	if rootPath == "" || fs.NArg() != 0 {
 		fmt.Fprintln(stderr, "usage: codemap graph <path> --entry <symbol> --depth <n>")
+		return 1
+	}
+	graphDirection := graphmodel.Direction(strings.TrimSpace(*direction))
+	if !graphDirection.IsValid() {
+		fmt.Fprintln(stderr, "graph failed: direction must be one of downstream, upstream, both")
 		return 1
 	}
 
@@ -60,6 +66,7 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 	graph, err := graphmodel.BuildGraph(toGraphSymbols(symbols), toGraphCalls(calls), graphmodel.BuildOptions{
 		Entry:           *entry,
 		Depth:           *depth,
+		Direction:       graphDirection,
 		ShowExternal:    *showExternal,
 		ShowUnresolved:  *showUnresolved,
 		ShowInterface:   *showInterface,

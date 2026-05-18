@@ -74,6 +74,94 @@ func TestGraphTraversal(t *testing.T) {
 		}
 	})
 
+	t.Run("downstream direction matches default traversal", func(t *testing.T) {
+		defaultGraph, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry: "main.main",
+			Depth: 5,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph default returned error: %v", err)
+		}
+
+		downstream, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry:     "main.main",
+			Depth:     5,
+			Direction: DirectionDownstream,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph downstream returned error: %v", err)
+		}
+
+		if !sameGraph(defaultGraph, downstream) {
+			t.Fatalf("downstream graph differs from default:\ndefault=%#v\ndownstream=%#v", defaultGraph, downstream)
+		}
+	})
+
+	t.Run("upstream returns callers of entry within depth", func(t *testing.T) {
+		got, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry:     "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			Depth:     2,
+			Direction: DirectionUpstream,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser")
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser")
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main")
+		forbidNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save")
+		requireEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			EdgeResolutionResolved,
+		)
+	})
+
+	t.Run("both returns upstream and downstream neighborhood", func(t *testing.T) {
+		got, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry:     "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			Depth:     1,
+			Direction: DirectionBoth,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser")
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser")
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save")
+		forbidNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main")
+		requireEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			EdgeResolutionResolved,
+		)
+		requireEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save",
+			EdgeResolutionResolved,
+		)
+	})
+
+	t.Run("upstream depth zero returns only entry", func(t *testing.T) {
+		got, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry:     "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			Depth:     0,
+			Direction: DirectionUpstream,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+		if len(got.Nodes) != 1 {
+			t.Fatalf("depth 0 node count = %d, want 1", len(got.Nodes))
+		}
+		if len(got.Edges) != 0 {
+			t.Fatalf("depth 0 edge count = %d, want 0", len(got.Edges))
+		}
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser")
+	})
+
 	t.Run("external is hidden by default and visible with flag", func(t *testing.T) {
 		hidden, err := BuildGraph(externalSymbols(), externalCalls(), BuildOptions{
 			Entry: "example.com/app.main",
@@ -256,6 +344,23 @@ func TestGraphTraversal(t *testing.T) {
 		}
 	})
 
+	t.Run("upstream cycle does not recurse forever", func(t *testing.T) {
+		got, err := BuildGraph(cycleSymbols(), cycleCalls(), BuildOptions{
+			Entry:     "example.com/cycle.A",
+			Depth:     20,
+			Direction: DirectionUpstream,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+		if len(got.Nodes) != 2 {
+			t.Fatalf("cycle graph node count = %d, want 2", len(got.Nodes))
+		}
+		if len(got.Edges) != 2 {
+			t.Fatalf("cycle graph edge count = %d, want 2", len(got.Edges))
+		}
+	})
+
 	t.Run("unknown entry returns clear error", func(t *testing.T) {
 		_, err := BuildGraph(simpleSymbols(), simpleCalls(), BuildOptions{
 			Entry: "not.exists",
@@ -265,6 +370,20 @@ func TestGraphTraversal(t *testing.T) {
 			t.Fatal("expected unknown entry to return error")
 		}
 		if !strings.Contains(err.Error(), "entry symbol not found") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid direction returns clear error", func(t *testing.T) {
+		_, err := BuildGraph(simpleSymbols(), simpleCalls(), BuildOptions{
+			Entry:     "github.com/tepzxl/codemap/examples/simple.main",
+			Depth:     1,
+			Direction: Direction("sideways"),
+		})
+		if err == nil {
+			t.Fatal("expected invalid direction to return error")
+		}
+		if !strings.Contains(err.Error(), "direction must be one of") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -379,4 +498,26 @@ func requireWarning(t *testing.T, graph Graph, code string) {
 		}
 	}
 	t.Fatalf("missing warning %q in %#v", code, graph.Warnings)
+}
+
+func sameGraph(left Graph, right Graph) bool {
+	if left.Entry != right.Entry || len(left.Nodes) != len(right.Nodes) || len(left.Edges) != len(right.Edges) || len(left.Warnings) != len(right.Warnings) {
+		return false
+	}
+	for i := range left.Nodes {
+		if left.Nodes[i] != right.Nodes[i] {
+			return false
+		}
+	}
+	for i := range left.Edges {
+		if left.Edges[i] != right.Edges[i] {
+			return false
+		}
+	}
+	for i := range left.Warnings {
+		if left.Warnings[i] != right.Warnings[i] {
+			return false
+		}
+	}
+	return true
 }

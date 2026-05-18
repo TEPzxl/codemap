@@ -106,9 +106,11 @@ http://localhost:8080
 4. 点击 `UserService.CreateUser` 查看节点源码。
 5. 点击一条边查看调用点所在行。
 6. 查看 `Current graph` 摘要，确认 nodes、edges、packages 和 resolution 分布。
-7. 切换 filter 或 depth 来刷新图，当前 entry、depth、filter 和 package 会同步到 URL。
-8. 点击 `Copy view URL` 复制当前视图链接。
-9. 修改本地源码后点击 `Rescan` 刷新索引。
+7. 选中任意节点后使用 `Focus downstream`、`Focus upstream` 或 `Focus neighborhood` 聚焦子图。
+8. 使用 `Reset to entry` 回到原始入口图。
+9. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
+10. 点击 `Copy view URL` 复制当前视图链接。
+11. 修改本地源码后点击 `Rescan` 刷新索引。
 
 更多说明见：[docs/demo/README.md](docs/demo/README.md)。
 
@@ -147,6 +149,18 @@ go run ./cmd/codemap calls ./examples/layered-service
 
 ```bash
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5
+```
+
+从选中节点查看上游调用：
+
+```bash
+go run ./cmd/codemap graph ./examples/layered-service --entry 'github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser' --depth 2 --direction upstream
+```
+
+查看上下游邻域：
+
+```bash
+go run ./cmd/codemap graph ./examples/layered-service --entry 'github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser' --depth 1 --direction both
 ```
 
 显示 external calls：
@@ -216,6 +230,13 @@ Graph：
 
 ```bash
 curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5"
+```
+
+Focus graph：
+
+```bash
+curl -s "http://localhost:8080/api/graph?entry=github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser&depth=2&direction=upstream"
+curl -s "http://localhost:8080/api/graph?entry=github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser&depth=1&direction=both"
 ```
 
 带过滤条件的 Graph：

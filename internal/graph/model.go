@@ -40,6 +40,30 @@ func (r EdgeResolution) IsValid() bool {
 	}
 }
 
+type Direction string
+
+const (
+	DirectionDownstream Direction = "downstream"
+	DirectionUpstream   Direction = "upstream"
+	DirectionBoth       Direction = "both"
+)
+
+func (d Direction) Normalized() Direction {
+	if d == "" {
+		return DirectionDownstream
+	}
+	return d
+}
+
+func (d Direction) IsValid() bool {
+	switch d.Normalized() {
+	case DirectionDownstream, DirectionUpstream, DirectionBoth:
+		return true
+	default:
+		return false
+	}
+}
+
 type Graph struct {
 	Entry    string    `json:"entry"`
 	Nodes    []Node    `json:"nodes"`

@@ -22,12 +22,14 @@ import {
 import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
 import { summarizeGraph } from "@/lib/graphSummary";
 import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
-import type { Edge as GraphEdge, Graph, Node as GraphNode, ProjectMeta, SourceView, SymbolInfo, Warning } from "@/types/graph";
+import type { Edge as GraphEdge, Graph, GraphDirection, Node as GraphNode, ProjectMeta, SourceView, SymbolInfo, Warning } from "@/types/graph";
 
 export default function Home() {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
   const [entry, setEntry] = useState("main.main");
+  const [rootEntry, setRootEntry] = useState("main.main");
   const [depth, setDepth] = useState(5);
+  const [direction, setDirection] = useState<GraphDirection>("downstream");
   const [packageFilter, setPackageFilter] = useState("");
   const [showExternal, setShowExternal] = useState(false);
   const [showUnresolved, setShowUnresolved] = useState(false);
@@ -54,6 +56,7 @@ export default function Home() {
   const graphRequestRef = useRef<GraphRequest>({
     entry: "main.main",
     depth: 5,
+    direction: "downstream",
   });
   const initialGraphRequestRef = useRef<GraphRequest | null>(null);
   const requestSeqRef = useRef(0);
@@ -78,13 +81,16 @@ export default function Home() {
         const main = symbolResponse.symbols.find((symbol) => symbol.id.endsWith(".main"));
         const nextEntry = initialState.entry ?? main?.id ?? symbolResponse.symbols[0]?.id ?? "main.main";
         const nextDepth = initialState.depth ?? 5;
+        const nextDirection = initialState.direction ?? "downstream";
         const nextPackageFilter = initialState.packageFilter ?? "";
         const nextShowExternal = initialState.showExternal ?? false;
         const nextShowUnresolved = initialState.showUnresolved ?? false;
         const nextShowInterface = initialState.showInterface ?? false;
         const nextExpandInterface = initialState.expandInterface ?? false;
         setEntry(nextEntry);
+        setRootEntry(nextEntry);
         setDepth(nextDepth);
+        setDirection(nextDirection);
         setPackageFilter(nextPackageFilter);
         setShowExternal(nextShowExternal);
         setShowUnresolved(nextShowUnresolved);
@@ -95,6 +101,7 @@ export default function Home() {
           initialGraphRequestRef.current = {
             entry: nextEntry,
             depth: nextDepth,
+            direction: nextDirection,
             showExternal: nextShowExternal,
             showUnresolved: nextShowUnresolved,
             showInterface: nextShowInterface,
@@ -121,13 +128,14 @@ export default function Home() {
     (entryOverride?: string): GraphRequest => ({
       entry: entryOverride ?? entry,
       depth,
+      direction,
       showExternal,
       showUnresolved,
       showInterface,
       expandInterface,
       packagePrefix: packageFilter || undefined,
     }),
-    [depth, entry, expandInterface, packageFilter, showExternal, showInterface, showUnresolved],
+    [depth, direction, entry, expandInterface, packageFilter, showExternal, showInterface, showUnresolved],
   );
 
   useEffect(() => {
@@ -224,7 +232,7 @@ export default function Home() {
       void loadGraph({ preserveSelection: true });
     }, 350);
     return () => window.clearTimeout(timeout);
-  }, [depth, expandInterface, loadGraph, packageFilter, showExternal, showInterface, showUnresolved]);
+  }, [depth, direction, expandInterface, loadGraph, packageFilter, showExternal, showInterface, showUnresolved]);
 
   useEffect(() => {
     if (symbolsLoading || graphLoadedRef.current) {
@@ -240,7 +248,9 @@ export default function Home() {
 
   function selectSymbol(symbolID: string) {
     setEntry(symbolID);
-    void loadGraph({ entryOverride: symbolID });
+    setRootEntry(symbolID);
+    setDirection("downstream");
+    void loadGraphRequest({ ...buildGraphRequest(symbolID), direction: "downstream" });
   }
 
   function manuallyLoadGraph() {
@@ -248,7 +258,21 @@ export default function Home() {
     if (resolvedEntry !== entry) {
       setEntry(resolvedEntry);
     }
-    void loadGraph({ entryOverride: resolvedEntry });
+    setRootEntry(resolvedEntry);
+    setDirection("downstream");
+    void loadGraphRequest({ ...buildGraphRequest(resolvedEntry), direction: "downstream" });
+  }
+
+  function focusNode(node: GraphNode, nextDirection: GraphDirection) {
+    setEntry(node.id);
+    setDirection(nextDirection);
+    void loadGraphRequest({ ...buildGraphRequest(node.id), direction: nextDirection }, { preserveSelection: true });
+  }
+
+  function resetToEntry() {
+    setEntry(rootEntry);
+    setDirection("downstream");
+    void loadGraphRequest({ ...buildGraphRequest(rootEntry), direction: "downstream" }, { preserveSelection: true });
   }
 
   async function handleRescan() {
@@ -347,7 +371,10 @@ export default function Home() {
               summary={graphSummary}
               loading={graphLoading}
               copyStatus={copyStatus}
+              selectedNode={selectedNode}
               onCopyViewURL={copyViewURL}
+              onFocusNode={focusNode}
+              onResetToEntry={resetToEntry}
             />
             <SymbolSearch
               symbols={symbols}
@@ -455,6 +482,7 @@ function resolveEntryInput(value: string, symbols: SymbolInfo[], modulePrefix: s
 interface InitialGraphState {
   entry?: string;
   depth?: number;
+  direction?: GraphDirection;
   packageFilter?: string;
   showExternal?: boolean;
   showUnresolved?: boolean;

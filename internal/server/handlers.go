@@ -118,9 +118,16 @@ func parseGraphOptions(w http.ResponseWriter, r *http.Request, requireEntry bool
 		nodeLimit = parsed
 	}
 
+	direction := graphmodel.Direction(query.Get("direction"))
+	if !direction.IsValid() {
+		writeError(w, http.StatusBadRequest, "direction must be one of downstream, upstream, both")
+		return graphmodel.BuildOptions{}, false
+	}
+
 	return graphmodel.BuildOptions{
 		Entry:           entry,
 		Depth:           depth,
+		Direction:       direction.Normalized(),
 		ShowExternal:    showExternal,
 		ShowUnresolved:  showUnresolved,
 		ShowInterface:   showInterface,

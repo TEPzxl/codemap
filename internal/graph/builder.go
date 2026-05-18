@@ -29,6 +29,7 @@ type Call struct {
 type BuildOptions struct {
 	Entry           string
 	Depth           int
+	Direction       Direction
 	ShowExternal    bool
 	ShowUnresolved  bool
 	ShowInterface   bool
@@ -53,25 +54,22 @@ func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, er
 	if options.NodeLimit < 0 {
 		return Graph{}, fmt.Errorf("node limit must be >= 0")
 	}
+	direction := options.Direction.Normalized()
+	if !direction.IsValid() {
+		return Graph{}, fmt.Errorf("direction must be one of downstream, upstream, both")
+	}
 
 	adjacency := make(map[string][]Call)
+	reverseAdjacency := make(map[string][]Call)
 	for _, call := range calls {
 		if !includeCall(call, options) {
 			continue
 		}
 		adjacency[call.From] = append(adjacency[call.From], call)
+		reverseAdjacency[call.To] = append(reverseAdjacency[call.To], call)
 	}
-	for from := range adjacency {
-		sort.Slice(adjacency[from], func(i, j int) bool {
-			if adjacency[from][i].Callsite.Line != adjacency[from][j].Callsite.Line {
-				return adjacency[from][i].Callsite.Line < adjacency[from][j].Callsite.Line
-			}
-			if adjacency[from][i].Callsite.Column != adjacency[from][j].Callsite.Column {
-				return adjacency[from][i].Callsite.Column < adjacency[from][j].Callsite.Column
-			}
-			return adjacency[from][i].To < adjacency[from][j].To
-		})
-	}
+	sortCallMap(adjacency, false)
+	sortCallMap(reverseAdjacency, true)
 
 	result := Graph{
 		Entry:    entry,
@@ -84,7 +82,15 @@ func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, er
 	expanded := make(map[string]int)
 
 	addNode(&result, nodeSet, nodeForSymbol(symbolByID[entry]))
-	traverse(entry, 0, options.Depth, adjacency, symbolByID, &result, nodeSet, edgeSet, expanded)
+	switch direction {
+	case DirectionDownstream:
+		traverseDownstream(entry, 0, options.Depth, adjacency, symbolByID, &result, nodeSet, edgeSet, expanded)
+	case DirectionUpstream:
+		traverseUpstream(entry, 0, options.Depth, reverseAdjacency, symbolByID, &result, nodeSet, edgeSet, expanded)
+	case DirectionBoth:
+		traverseDownstream(entry, 0, options.Depth, adjacency, symbolByID, &result, nodeSet, edgeSet, make(map[string]int))
+		traverseUpstream(entry, 0, options.Depth, reverseAdjacency, symbolByID, &result, nodeSet, edgeSet, make(map[string]int))
+	}
 
 	sort.Slice(result.Nodes, func(i, j int) bool {
 		return result.Nodes[i].ID < result.Nodes[j].ID
@@ -98,6 +104,23 @@ func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, er
 	}
 
 	return result, nil
+}
+
+func sortCallMap(calls map[string][]Call, upstream bool) {
+	for key := range calls {
+		sort.Slice(calls[key], func(i, j int) bool {
+			if calls[key][i].Callsite.Line != calls[key][j].Callsite.Line {
+				return calls[key][i].Callsite.Line < calls[key][j].Callsite.Line
+			}
+			if calls[key][i].Callsite.Column != calls[key][j].Callsite.Column {
+				return calls[key][i].Callsite.Column < calls[key][j].Callsite.Column
+			}
+			if upstream && calls[key][i].From != calls[key][j].From {
+				return calls[key][i].From < calls[key][j].From
+			}
+			return calls[key][i].To < calls[key][j].To
+		})
+	}
 }
 
 func resolveEntry(entry string, symbols []Symbol) (string, error) {
@@ -220,7 +243,7 @@ func filterEdgesToNodes(result *Graph) {
 	result.Edges = edges
 }
 
-func traverse(current string, depth int, maxDepth int, adjacency map[string][]Call, symbols map[string]Symbol, result *Graph, nodeSet map[string]struct{}, edgeSet map[string]struct{}, expanded map[string]int) {
+func traverseDownstream(current string, depth int, maxDepth int, adjacency map[string][]Call, symbols map[string]Symbol, result *Graph, nodeSet map[string]struct{}, edgeSet map[string]struct{}, expanded map[string]int) {
 	if depth >= maxDepth {
 		return
 	}
@@ -235,7 +258,30 @@ func traverse(current string, depth int, maxDepth int, adjacency map[string][]Ca
 		addEdge(result, edgeSet, edgeForCall(call, len(result.Edges)+1))
 
 		if _, ok := symbols[call.To]; ok {
-			traverse(call.To, depth+1, maxDepth, adjacency, symbols, result, nodeSet, edgeSet, expanded)
+			traverseDownstream(call.To, depth+1, maxDepth, adjacency, symbols, result, nodeSet, edgeSet, expanded)
+		}
+	}
+}
+
+func traverseUpstream(current string, depth int, maxDepth int, reverseAdjacency map[string][]Call, symbols map[string]Symbol, result *Graph, nodeSet map[string]struct{}, edgeSet map[string]struct{}, expanded map[string]int) {
+	if depth >= maxDepth {
+		return
+	}
+	if previousDepth, ok := expanded[current]; ok && previousDepth <= depth {
+		return
+	}
+	expanded[current] = depth
+
+	for _, call := range reverseAdjacency[current] {
+		fromSymbol, ok := symbols[call.From]
+		if !ok {
+			continue
+		}
+		addNode(result, nodeSet, nodeForSymbol(fromSymbol))
+		addEdge(result, edgeSet, edgeForCall(call, len(result.Edges)+1))
+		traverseUpstream(call.From, depth+1, maxDepth, reverseAdjacency, symbols, result, nodeSet, edgeSet, expanded)
+		if _, ok := symbols[call.To]; ok {
+			addNode(result, nodeSet, nodeForSymbol(symbols[call.To]))
 		}
 	}
 }

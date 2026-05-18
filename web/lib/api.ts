@@ -1,6 +1,7 @@
 import type {
   CallsiteSnippet,
   Graph,
+  GraphDirection,
   ProjectMeta,
   RescanResponse,
   SourceSnippet,
@@ -11,6 +12,7 @@ import type {
 export interface GraphRequest {
   entry: string;
   depth: number;
+  direction?: GraphDirection;
   showExternal?: boolean;
   showUnresolved?: boolean;
   showInterface?: boolean;
@@ -63,6 +65,7 @@ function graphParams(options: GraphRequest): URLSearchParams {
   const params = new URLSearchParams({
     entry: options.entry,
     depth: String(options.depth),
+    direction: options.direction ?? "downstream",
   });
   if (options.showExternal) {
     params.set("show_external", "true");

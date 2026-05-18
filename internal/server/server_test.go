@@ -139,6 +139,38 @@ func TestAPIHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("graph upstream direction", func(t *testing.T) {
+		entry := "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser"
+		got := requestGraph(t, handler, "/api/graph?entry="+entry+"&depth=2&direction=upstream")
+		requireServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			graphmodel.EdgeResolutionResolved,
+			false,
+		)
+		forbidServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save",
+		)
+	})
+
+	t.Run("graph both direction", func(t *testing.T) {
+		entry := "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser"
+		got := requestGraph(t, handler, "/api/graph?entry="+entry+"&depth=1&direction=both")
+		requireServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/handler.(*UserHandler).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			graphmodel.EdgeResolutionResolved,
+			false,
+		)
+		requireServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save",
+			graphmodel.EdgeResolutionResolved,
+			false,
+		)
+	})
+
 	t.Run("source", func(t *testing.T) {
 		nodeID := "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser"
 		rr := httptest.NewRecorder()
@@ -485,6 +517,7 @@ func TestAPIErrors(t *testing.T) {
 		{name: "unknown source node", path: "/api/source?node_id=not.exists", want: http.StatusNotFound},
 		{name: "invalid graph entry", path: "/api/graph?entry=not.exists&depth=5", want: http.StatusBadRequest},
 		{name: "invalid graph depth", path: "/api/graph?entry=main.main&depth=-1", want: http.StatusBadRequest},
+		{name: "invalid graph direction", path: "/api/graph?entry=main.main&direction=sideways", want: http.StatusBadRequest},
 		{name: "invalid graph bool", path: "/api/graph?entry=main.main&show_external=maybe", want: http.StatusBadRequest},
 		{name: "invalid graph node limit", path: "/api/graph?entry=main.main&node_limit=-1", want: http.StatusBadRequest},
 		{name: "package filter removes all nodes", path: "/api/graph?entry=main.main&package=example.com/no-match", want: http.StatusBadRequest},
