@@ -296,7 +296,7 @@ function SelectedNodeOverlay({ node, modulePrefix }: { node: GraphNode | null; m
     return null;
   }
   return (
-    <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-[min(520px,calc(100%-2rem))] rounded-md border border-line bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+    <div className="pointer-events-none absolute left-4 top-16 z-10 max-w-[min(520px,calc(100%-2rem))] rounded-md border border-line bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
       <p className="text-sm font-semibold text-ink">{node.label}</p>
       <p className="mt-1 break-all font-mono text-xs leading-5 text-steel" title={node.id}>
         {displaySymbolID(node.id, modulePrefix)}

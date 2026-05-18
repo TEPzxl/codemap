@@ -11,11 +11,11 @@ interface ProjectMetaPanelProps {
 
 export function ProjectMetaPanel({ meta, loading, error, onRescan }: ProjectMetaPanelProps) {
   return (
-    <section className="grid gap-3 rounded-md border border-line bg-white p-3">
+    <section className="grid min-w-0 gap-3 rounded-md border border-line bg-white p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-ink">Project</h2>
-          <p className="mt-1 truncate font-mono text-xs text-steel" title={meta?.module || meta?.root || ""}>
+          <p className="mt-1 break-all font-mono text-xs leading-5 text-steel" title={meta?.module || meta?.root || ""}>
             {meta?.module || meta?.root || "No metadata loaded"}
           </p>
         </div>
@@ -30,7 +30,7 @@ export function ProjectMetaPanel({ meta, loading, error, onRescan }: ProjectMeta
       </div>
 
       {meta ? (
-        <dl className="grid grid-cols-4 gap-2 text-xs">
+        <dl className="grid min-w-0 grid-cols-2 gap-2 text-xs min-[1280px]:grid-cols-4">
           <MetaItem label="Packages" value={meta.packages} />
           <MetaItem label="Symbols" value={meta.symbols} />
           <MetaItem label="Calls" value={meta.calls} />
@@ -39,7 +39,7 @@ export function ProjectMetaPanel({ meta, loading, error, onRescan }: ProjectMeta
       ) : null}
 
       {meta ? (
-        <p className="font-mono text-[11px] text-steel">
+        <p className="break-all font-mono text-[11px] leading-5 text-steel">
           {meta.analysis_duration_ms}ms · {formatAnalyzedAt(meta.analyzed_at)} · {meta.version}
         </p>
       ) : null}
@@ -50,7 +50,7 @@ export function ProjectMetaPanel({ meta, loading, error, onRescan }: ProjectMeta
 
 function MetaItem({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded border border-line bg-paper px-2 py-1">
+    <div className="min-w-0 rounded border border-line bg-paper px-2 py-1">
       <dt className="text-[10px] uppercase text-steel">{label}</dt>
       <dd className="mt-0.5 font-mono text-sm font-semibold text-ink">{value}</dd>
     </div>

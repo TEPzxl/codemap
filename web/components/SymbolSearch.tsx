@@ -78,7 +78,7 @@ export function SymbolSearch({
         <span className="font-semibold text-ink">Entry symbol</span>
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
           <input
-            className="h-10 w-full min-w-0 overflow-x-auto rounded-md border border-line bg-white px-3 font-mono text-sm text-ink outline-none transition focus:border-moss focus:ring-2 focus:ring-moss/20 disabled:bg-stone-100"
+            className="h-10 w-full min-w-0 rounded-md border border-line bg-white px-3 font-mono text-sm text-ink outline-none transition focus:border-moss focus:ring-2 focus:ring-moss/20 disabled:bg-stone-100"
             value={query}
             onChange={(event) => {
               setQueryOverride(event.target.value);
@@ -92,7 +92,7 @@ export function SymbolSearch({
             type="button"
             onClick={copySymbolID}
             disabled={!value || disabled}
-            className="h-10 shrink-0 rounded-md border border-line bg-white px-3 text-xs font-semibold text-ink transition hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:text-steel"
+            className="h-10 w-14 shrink-0 rounded-md border border-line bg-white px-2 text-xs font-semibold text-ink transition hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:text-steel"
           >
             Copy
           </button>

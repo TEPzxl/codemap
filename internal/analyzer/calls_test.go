@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"go/token"
+	"go/types"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,6 +104,32 @@ func TestOnly() {
 			}
 		}
 	})
+}
+
+func TestResolveInterfaceMethodWithNilPackageDoesNotPanic(t *testing.T) {
+	method := types.NewFunc(
+		token.NoPos,
+		nil,
+		"Save",
+		types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(), false),
+	)
+	iface := types.NewInterfaceType([]*types.Func{method}, nil).Complete()
+	recv := types.NewNamed(
+		types.NewTypeName(token.NoPos, types.NewPackage("example.com/app", "app"), "Store", nil),
+		iface,
+		nil,
+	)
+
+	target := resolveInterfaceMethodCallTarget(method, recv, map[string]struct{}{})
+	if target.Resolution != graph.EdgeResolutionUnresolved {
+		t.Fatalf("resolution = %q, want %q", target.Resolution, graph.EdgeResolutionUnresolved)
+	}
+	if target.To != "Save" {
+		t.Fatalf("to = %q, want Save", target.To)
+	}
+	if target.InterfaceMethod != nil || target.InterfaceType != nil {
+		t.Fatalf("unresolved target should not carry interface expansion metadata: %#v", target)
+	}
 }
 
 func TestExtractCallsExpandInterfaceCandidates(t *testing.T) {

@@ -159,12 +159,7 @@ func resolveCallTarget(pkg *packages.Package, fun ast.Expr, symbolIDs map[string
 				return callTarget{To: expr.Sel.Name, Resolution: graph.EdgeResolutionUnresolved}
 			}
 			if isInterfaceReceiver(selection.Recv()) {
-				return callTarget{
-					To:              methodID(fn, selection.Recv()),
-					Resolution:      graph.EdgeResolutionInterface,
-					InterfaceMethod: fn,
-					InterfaceType:   selection.Recv(),
-				}
+				return resolveInterfaceMethodCallTarget(fn, selection.Recv(), symbolIDs)
 			}
 			to, resolution := resolveFuncObject(fn, selection.Recv(), symbolIDs)
 			return callTarget{To: to, Resolution: resolution}
@@ -242,8 +237,8 @@ func (i *interfaceCandidateIndex) addImplementationCall(result *[]Call, seen map
 		return
 	}
 
-	id := funcObjectID(method, nil)
-	if _, ok := i.symbolIDs[id]; !ok {
+	id, resolution := resolveFuncObject(method, nil, i.symbolIDs)
+	if resolution != graph.EdgeResolutionResolved {
 		return
 	}
 	if _, ok := seen[id]; ok {
@@ -316,7 +311,26 @@ func resolveFuncObject(fn *types.Func, recv types.Type, symbolIDs map[string]str
 	return id, graph.EdgeResolutionExternal
 }
 
+func resolveInterfaceMethodCallTarget(fn *types.Func, recv types.Type, symbolIDs map[string]struct{}) callTarget {
+	to, resolution := resolveFuncObject(fn, recv, symbolIDs)
+	if resolution == graph.EdgeResolutionUnresolved {
+		return callTarget{To: to, Resolution: graph.EdgeResolutionUnresolved}
+	}
+	return callTarget{
+		To:              to,
+		Resolution:      graph.EdgeResolutionInterface,
+		InterfaceMethod: fn,
+		InterfaceType:   recv,
+	}
+}
+
 func funcObjectID(fn *types.Func, recv types.Type) string {
+	if fn == nil || fn.Pkg() == nil {
+		if fn == nil {
+			return "unresolved"
+		}
+		return fn.Name()
+	}
 	sig, _ := fn.Type().(*types.Signature)
 	if recv == nil && sig != nil && sig.Recv() != nil {
 		recv = sig.Recv().Type()
@@ -328,6 +342,13 @@ func funcObjectID(fn *types.Func, recv types.Type) string {
 }
 
 func methodID(fn *types.Func, recv types.Type) string {
+	if fn == nil || fn.Pkg() == nil {
+		name := "unresolved"
+		if fn != nil {
+			name = fn.Name()
+		}
+		return name
+	}
 	return fn.Pkg().Path() + "." + receiverTypeID(recv) + "." + fn.Name()
 }
 

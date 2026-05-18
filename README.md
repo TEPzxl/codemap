@@ -1,80 +1,80 @@
 # codemap
 
-`codemap` is a local-first Go static analysis and call graph explorer. It scans a local Go module or workspace, extracts statically resolvable function and method calls, and serves an interactive React Flow UI for inspecting call chains, source snippets, and callsites.
+`codemap` 是一个本地优先的 Go 静态分析与调用图浏览工具。它扫描本地 Go module 或 workspace，提取静态可解析的函数与方法调用关系，并提供一个基于 React Flow 的交互式 Web UI，用于查看调用链、源码片段和调用点。
 
-## v0.2 Features
+## v0.2 功能
 
-- Local Go module scanning with `go/packages`.
-- Function and method symbol extraction with stable IDs.
-- Resolved, interface, external, and unresolved call extraction.
-- Depth-limited graph traversal from an entry symbol.
-- Interface implementation candidate expansion behind `--expand-interface` / `expand_interface=true`.
-- CLI, HTTP API, and local web UI using the same graph filtering options.
-- Web symbol search, package filter, depth control, and graph filter toggles.
-- Node source viewing through `/api/source`.
-- Edge callsite viewing through `/api/callsite`.
-- Project metadata through `/api/meta`.
-- Manual cached-index refresh through `/api/rescan`.
-- Static web assets embedded into the Go server binary.
+- 使用 `go/packages` 扫描本地 Go module。
+- 提取函数和方法 symbol，并生成稳定 ID。
+- 提取 resolved、interface、external 和 unresolved 调用。
+- 从入口 symbol 构建带 depth 限制的调用图。
+- 通过 `--expand-interface` / `expand_interface=true` 展开接口实现候选。
+- CLI、HTTP API 和本地 Web UI 使用一致的图过滤选项。
+- Web 支持 symbol 搜索、package filter、depth 控制和 graph filter toggles。
+- 通过 `/api/source` 查看节点源码。
+- 通过 `/api/callsite` 查看边对应的调用点源码。
+- 通过 `/api/meta` 查看项目元信息。
+- 通过 `/api/rescan` 手动刷新缓存索引。
+- Go server binary 内嵌静态 Web 资源。
 
-Default behavior stays conservative: standard library and third-party calls are hidden, unresolved calls are hidden, and interface implementation candidates are not expanded unless explicitly requested.
+默认行为保持保守：默认隐藏标准库和第三方调用，默认隐藏 unresolved 调用，并且只有显式启用时才展示接口实现候选。
 
-## Tech Stack
+## 技术栈
 
-- Go, `go/packages`, `go/ast`, `go/types`, `net/http`, `embed`
-- Next.js, React, TypeScript, Tailwind CSS, React Flow
-- pnpm through Corepack for frontend dependency management
+- Go、`go/packages`、`go/ast`、`go/types`、`net/http`、`embed`
+- Next.js、React、TypeScript、Tailwind CSS、React Flow
+- 通过 Corepack 使用 pnpm 管理前端依赖
 
-## Install
+## 安装
 
-Prerequisites:
+前置要求：
 
-- Go 1.25 or newer
-- Node.js with Corepack
+- Go 1.25 或更新版本
+- 带 Corepack 的 Node.js
 
-Install frontend dependencies:
+安装前端依赖：
 
 ```bash
 make install
 ```
 
-## Build And Test
+## 构建与测试
 
-Run the full quality gate:
+运行完整质量门禁：
 
 ```bash
 make check
 ```
 
-`make check` runs Go tests, CLI smoke checks, v0.1 golden output verification, frontend lint, TypeScript checks, and the Next production build.
+`make check` 会运行 Go 测试、fixture 项目的 CLI smoke check、v0.1 golden output 校验、前端 lint、TypeScript 检查和 Next 生产构建。
 
-Build the static web UI and stage it for Go embed:
+构建静态 Web UI 并写入 Go embed 使用的目录：
 
 ```bash
 make web-build
 ```
 
-Build the local Go binary:
+构建本地 Go binary：
 
 ```bash
 make build
 ```
 
-The binary is written to:
+binary 会输出到：
 
 ```text
 bin/codemap
 ```
 
-`go build` does not run pnpm. Run `make web-build` before `make build` when the binary should include the current frontend.
+`go build` 不会运行 pnpm。如果希望 binary 包含当前前端产物，请先运行 `make web-build`，再运行 `make build`。
 
-Build release binaries:
+构建 release binaries：
 
 ```bash
 make release
 ```
 
-Release artifacts are written to:
+release 产物会输出到：
 
 ```text
 dist/codemap-linux-amd64
@@ -82,9 +82,9 @@ dist/codemap-darwin-arm64
 dist/codemap-darwin-amd64
 ```
 
-## Quick Demo
+## 快速 Demo
 
-Run the layered-service demo:
+运行 layered-service demo：
 
 ```bash
 make web-build
@@ -92,84 +92,84 @@ make build
 ./bin/codemap serve ./examples/layered-service --port 8080
 ```
 
-Open:
+打开：
 
 ```text
 http://localhost:8080
 ```
 
-In the UI:
+在 UI 中：
 
-1. Search or select `main.main`.
-2. Click `Load graph`.
-3. Inspect the `main -> handler -> service -> repository` call chain.
-4. Click `UserService.CreateUser` to view node source.
-5. Click an edge to view the callsite line.
-6. Toggle filters or depth to refresh the graph.
-7. Click `Rescan` after changing local source files.
+1. 搜索或选择 `main.main`。
+2. 点击 `Load graph`。
+3. 查看 `main -> handler -> service -> repository` 调用链。
+4. 点击 `UserService.CreateUser` 查看节点源码。
+5. 点击一条边查看调用点所在行。
+6. 切换 filter 或 depth 来刷新图。
+7. 修改本地源码后点击 `Rescan` 刷新索引。
 
-More details: [docs/demo/README.md](docs/demo/README.md).
+更多说明见：[docs/demo/README.md](docs/demo/README.md)。
 
 ![codemap UI screenshot](docs/demo/codemap-ui.png)
 
-## CLI Examples
+## CLI 示例
 
-Scan packages:
+扫描 packages：
 
 ```bash
 go run ./cmd/codemap scan ./examples/simple
 ```
 
-List symbols:
+列出 symbols：
 
 ```bash
 go run ./cmd/codemap symbols ./examples/layered-service
 ```
 
-List calls:
+列出 calls：
 
 ```bash
 go run ./cmd/codemap calls ./examples/layered-service
 ```
 
-Build a graph:
+构建调用图：
 
 ```bash
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5
 ```
 
-Show external calls:
+显示 external calls：
 
 ```bash
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --show-external
 ```
 
-Show unresolved calls:
+显示 unresolved calls：
 
 ```bash
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --show-unresolved
 ```
 
-Show interface calls without candidate expansion:
+显示 interface calls，但不展开候选实现：
 
 ```bash
 go run ./cmd/codemap graph ./examples/interface-call --entry main.main --depth 5 --show-interface
 ```
 
-Expand interface implementation candidates:
+展开接口实现候选：
 
 ```bash
 go run ./cmd/codemap graph ./examples/interface-call --entry main.main --depth 5 --expand-interface
 ```
 
-Filter by package or node limit:
+按 package 或 node limit 过滤：
 
 ```bash
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --package github.com/tepzxl/codemap/examples/layered-service/internal/service
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --node-limit 100
 ```
 
-Serve API and UI:
+启动 API 和 UI：
 
 ```bash
 go run ./cmd/codemap serve ./examples/layered-service --port 8080
@@ -177,37 +177,37 @@ go run ./cmd/codemap serve ./examples/layered-service --port 8080
 
 ## HTTP API
 
-Health:
+Health：
 
 ```bash
 curl -s http://localhost:8080/api/health
 ```
 
-Metadata:
+Metadata：
 
 ```bash
 curl -s http://localhost:8080/api/meta | python -m json.tool
 ```
 
-Manual rescan:
+手动 rescan：
 
 ```bash
 curl -s -X POST http://localhost:8080/api/rescan | python -m json.tool
 ```
 
-Symbols:
+Symbols：
 
 ```bash
 curl -s http://localhost:8080/api/symbols
 ```
 
-Graph:
+Graph：
 
 ```bash
 curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5"
 ```
 
-Graph with filters:
+带过滤条件的 Graph：
 
 ```bash
 curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&show_external=true"
@@ -218,19 +218,19 @@ curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&package=github.
 curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&node_limit=100"
 ```
 
-Node source:
+节点源码：
 
 ```bash
 curl -s "http://localhost:8080/api/source?node_id=<symbol-id>"
 ```
 
-Edge callsite:
+边调用点：
 
 ```bash
 curl -s "http://localhost:8080/api/callsite?edge_id=<edge-id>&entry=main.main&depth=5"
 ```
 
-Warnings:
+Warnings：
 
 ```bash
 curl -s http://localhost:8080/api/warnings
@@ -238,7 +238,7 @@ curl -s http://localhost:8080/api/warnings
 
 ## CI
 
-GitHub Actions runs:
+GitHub Actions 会运行：
 
 ```bash
 make check
@@ -246,23 +246,23 @@ make web-build
 make build
 ```
 
-The workflow enables Corepack and activates the pnpm version declared by `web/package.json`.
+workflow 会启用 Corepack，并激活 `web/package.json` 中声明的 pnpm 版本。
 
-## Development
+## 开发
 
-Run Go tests:
+运行 Go 测试：
 
 ```bash
 make test-go
 ```
 
-Run frontend checks:
+运行前端检查：
 
 ```bash
 make test-web
 ```
 
-Run individual frontend gates:
+运行单独的前端门禁：
 
 ```bash
 make web-lint
@@ -270,34 +270,34 @@ make web-typecheck
 make build-web
 ```
 
-Run the Go API and Next dev server separately:
+分别启动 Go API 和 Next dev server：
 
 ```bash
 make dev-api
 make dev-web
 ```
 
-Or run both together:
+或者同时启动：
 
 ```bash
 make dev
 ```
 
-Default dev URLs:
+默认开发地址：
 
 ```text
 Go API: http://localhost:18080
 Web UI: http://127.0.0.1:3000
 ```
 
-Override ports when needed:
+按需覆盖端口：
 
 ```bash
 make dev-web WEB_PORT=3001
 make dev-api API_PORT=8080
 ```
 
-## Architecture
+## 架构
 
 ```text
 Local Go repo
@@ -311,15 +311,15 @@ Local Go repo
   -> source and callsite APIs
 ```
 
-The frontend never scans local files and does not use Next API routes for core analysis. The Go server owns package loading, analysis, graph building, source reading, cached index metadata, and API responses.
+前端不会扫描本地文件，也不会使用 Next API routes 承担核心分析职责。Go server 负责 package loading、analysis、graph building、source reading、cached index metadata 和 API responses。
 
-## Current Limits
+## 当前限制
 
-- Only local Go projects are supported.
-- Remote GitHub URL scanning is not supported.
-- `_test.go` files are ignored by default.
-- Interface candidate expansion is static and conservative.
-- Dynamic calls through function variables may be marked `unresolved`.
-- The graph is a static approximation, not a runtime-precise call trace.
-- Standard library and third-party calls are hidden from the default graph unless explicitly shown.
-- No database, editor plugin, or LLM explanation layer is included.
+- 只支持本地 Go 项目。
+- 不支持远程 GitHub URL 扫描。
+- 默认忽略 `_test.go` 文件。
+- interface candidate expansion 是静态保守候选，不等同于运行时真实分派。
+- 通过函数变量触发的动态调用可能会标记为 `unresolved`。
+- 调用图是静态近似结果，不是运行时精确调用链。
+- 标准库和第三方调用默认隐藏，除非显式启用。
+- 不包含数据库、编辑器插件或 LLM 解释层。

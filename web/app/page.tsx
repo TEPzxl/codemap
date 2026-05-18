@@ -36,6 +36,7 @@ export default function Home() {
   const [warnings, setWarnings] = useState<Warning[]>([]);
   const [meta, setMeta] = useState<ProjectMeta | null>(null);
   const [source, setSource] = useState<SourceView | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [graphLoading, setGraphLoading] = useState(false);
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -269,40 +270,58 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(420px,460px)_minmax(0,1fr)]">
-        <aside className="grid min-w-0 content-start gap-5 overflow-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
-          <ProjectMetaPanel meta={meta} loading={rescanLoading} error={rescanError} onRescan={handleRescan} />
-          <SymbolSearch
-            symbols={symbols}
-            value={entry}
-            onChange={setEntry}
-            onSelectSymbol={selectSymbol}
-            packageFilter={packageFilter}
-            onPackageFilterChange={setPackageFilter}
-            modulePrefix={modulePrefix}
-            disabled={symbolsLoading}
-          />
-          <Toolbar
-            depth={depth}
-            onDepthChange={setDepth}
-            onLoadGraph={manuallyLoadGraph}
-            showExternal={showExternal}
-            showUnresolved={showUnresolved}
-            showInterface={showInterface}
-            expandInterface={expandInterface}
-            onShowExternalChange={setShowExternal}
-            onShowUnresolvedChange={setShowUnresolved}
-            onShowInterfaceChange={setShowInterface}
-            onExpandInterfaceChange={setExpandInterface}
-            loading={graphLoading}
-          />
+      <section
+        className={
+          sidebarCollapsed
+            ? "grid min-h-0 grid-cols-1"
+            : "grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]"
+        }
+      >
+        {!sidebarCollapsed ? (
+          <aside className="grid min-h-0 min-w-0 content-start gap-5 overflow-y-auto overflow-x-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
+            <ProjectMetaPanel meta={meta} loading={rescanLoading} error={rescanError} onRescan={handleRescan} />
+            <SymbolSearch
+              symbols={symbols}
+              value={entry}
+              onChange={setEntry}
+              onSelectSymbol={selectSymbol}
+              packageFilter={packageFilter}
+              onPackageFilterChange={setPackageFilter}
+              modulePrefix={modulePrefix}
+              disabled={symbolsLoading}
+            />
+            <Toolbar
+              depth={depth}
+              onDepthChange={setDepth}
+              onLoadGraph={manuallyLoadGraph}
+              showExternal={showExternal}
+              showUnresolved={showUnresolved}
+              showInterface={showInterface}
+              expandInterface={expandInterface}
+              onShowExternalChange={setShowExternal}
+              onShowUnresolvedChange={setShowUnresolved}
+              onShowInterfaceChange={setShowInterface}
+              onExpandInterfaceChange={setExpandInterface}
+              loading={graphLoading}
+            />
 
-          {apiError ? <p className="rounded-md border border-signal/30 bg-orange-50 p-3 text-sm text-signal">{apiError}</p> : null}
-          <WarningPanel warnings={warnings} />
-        </aside>
+            {apiError ? <p className="rounded-md border border-signal/30 bg-orange-50 p-3 text-sm text-signal">{apiError}</p> : null}
+            <WarningPanel warnings={warnings} />
+          </aside>
+        ) : null}
 
-        <section className="min-w-0 min-h-[520px]">
+        <section className="relative min-h-[520px] min-w-0">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? "Show control panel" : "Hide control panel"}
+            title={sidebarCollapsed ? "Show panel" : "Hide panel"}
+            className="absolute left-4 top-4 z-20 grid h-9 w-9 place-items-center rounded-md border border-line bg-white font-mono text-lg font-semibold leading-none text-ink shadow-sm transition hover:border-moss hover:text-moss"
+          >
+            {sidebarCollapsed ? ">" : "<"}
+          </button>
           <GraphView
+            key={sidebarCollapsed ? "graph-collapsed" : "graph-expanded"}
             graph={graph}
             selectedNode={selectedNode}
             selectedEdgeID={selectedEdgeID}

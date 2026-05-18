@@ -31,6 +31,10 @@ func webHandler() http.Handler {
 		}
 
 		if !assetExists(staticFS, strings.TrimPrefix(requestPath, "/")) {
+			if isStaticAssetRequest(requestPath) {
+				http.NotFound(w, r)
+				return
+			}
 			if !assetExists(staticFS, "index.html") {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				w.WriteHeader(http.StatusOK)
@@ -53,13 +57,22 @@ func cleanWebPath(rawPath string) string {
 }
 
 func assetExists(files fs.FS, name string) bool {
-	if name == "" || strings.Contains(name, "..") {
+	if name == "" {
 		return false
 	}
+	cleaned := strings.TrimPrefix(path.Clean("/"+name), "/")
+	if cleaned == "." || cleaned != name {
+		return false
+	}
+
 	file, err := files.Open(name)
 	if err != nil {
 		return false
 	}
 	_ = file.Close()
 	return true
+}
+
+func isStaticAssetRequest(requestPath string) bool {
+	return strings.HasPrefix(requestPath, "/_next/") || path.Ext(requestPath) != ""
 }

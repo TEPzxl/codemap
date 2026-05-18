@@ -11,11 +11,50 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/tepzxl/codemap/internal/analyzer"
 	graphmodel "github.com/tepzxl/codemap/internal/graph"
 )
+
+func TestAssetExistsAllowsHashedStaticFilenames(t *testing.T) {
+	files := fstest.MapFS{
+		"_next/static/chunks/0qymxd.i09ub..css": &fstest.MapFile{Data: []byte("body{}")},
+		"index.html":                            &fstest.MapFile{Data: []byte("<!doctype html>")},
+	}
+
+	if !assetExists(files, "_next/static/chunks/0qymxd.i09ub..css") {
+		t.Fatal("expected hashed CSS filename containing consecutive dots to be accepted")
+	}
+	if assetExists(files, "../index.html") {
+		t.Fatal("expected parent directory traversal to be rejected")
+	}
+	if assetExists(files, "_next/static/../index.html") {
+		t.Fatal("expected normalized traversal path to be rejected")
+	}
+}
+
+func TestStaticAssetRequestDetection(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{path: "/_next/static/chunks/app.js", want: true},
+		{path: "/favicon.ico", want: true},
+		{path: "/docs/readme.html", want: true},
+		{path: "/graph/deep-link", want: false},
+		{path: "/", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := isStaticAssetRequest(tt.path); got != tt.want {
+				t.Fatalf("isStaticAssetRequest(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestAPIHandlers(t *testing.T) {
 	project := loadTestProject(t)
