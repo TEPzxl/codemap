@@ -66,10 +66,6 @@ export function serializeViewState(options: GraphRequest): URLSearchParams {
   return params;
 }
 
-export function viewURL(pathname: string, options: GraphRequest): string {
-  return `${pathname}?${serializeViewState(options).toString()}`;
-}
-
 function isTrue(params: URLSearchParams, canonical: string, legacy: string): boolean {
   return params.get(canonical) === "true" || params.get(legacy) === "true";
 }

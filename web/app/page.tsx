@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CurrentGraphSearchPanel } from "@/components/CurrentGraphSearchPanel";
 import { EntrypointsPanel } from "@/components/EntrypointsPanel";
-import { ExportPanel } from "@/components/ExportPanel";
 import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
 import { GraphModeToggle } from "@/components/GraphModeToggle";
 import { GraphView } from "@/components/GraphView";
@@ -16,7 +15,6 @@ import { SymbolSearch } from "@/components/SymbolSearch";
 import { Toolbar } from "@/components/Toolbar";
 import { WarningPanel } from "@/components/WarningPanel";
 import {
-  fetchGraphExport,
   fetchCallsite,
   fetchEntrypoints,
   fetchGraph,
@@ -35,13 +33,12 @@ import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
 import { entrypointTargetMode, type GraphMode } from "@/lib/entrypointSelection";
 import { summarizeGraph } from "@/lib/graphSummary";
 import { filterGraphByPackage } from "@/lib/packageDrilldown";
-import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
+import { parseViewState, serializeViewState } from "@/lib/viewState";
 import type {
   Edge as GraphEdge,
   Entrypoint,
   Graph,
   GraphDirection,
-  GraphExportFormat,
   Node as GraphNode,
   PackageGraph,
   PackageNode,
@@ -83,20 +80,17 @@ export default function Home() {
   const [meta, setMeta] = useState<ProjectMeta | null>(null);
   const [source, setSource] = useState<SourceView | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [graphFullscreen, setGraphFullscreen] = useState(false);
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [graphLoading, setGraphLoading] = useState(false);
   const [pathLoading, setPathLoading] = useState(false);
   const [sourceLoading, setSourceLoading] = useState(false);
-  const [exportLoading, setExportLoading] = useState(false);
   const [rescanLoading, setRescanLoading] = useState(false);
   const [apiError, setAPIError] = useState<string | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [rescanError, setRescanError] = useState<string | null>(null);
-  const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const graphLoadedRef = useRef(false);
   const graphRequestRef = useRef<GraphRequest>({
     entry: "main.main",
@@ -214,6 +208,19 @@ export default function Home() {
   useEffect(() => {
     sourceRef.current = source;
   }, [source]);
+
+  useEffect(() => {
+    if (!graphFullscreen) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setGraphFullscreen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [graphFullscreen]);
 
   const applyGraph = useCallback((nextGraph: Graph, preserveSelection: boolean) => {
     setGraph(nextGraph);
@@ -547,53 +554,6 @@ export default function Home() {
     }
   }
 
-  async function copyViewURL() {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const request = loadedGraphRequest ?? buildGraphRequest();
-    const nextURL = `${window.location.origin}${viewURL(window.location.pathname, request)}`;
-    try {
-      await navigator.clipboard.writeText(nextURL);
-      setCopyStatus("Copied current view URL");
-    } catch {
-      setCopyStatus("Copy failed");
-    }
-    window.setTimeout(() => setCopyStatus(null), 2000);
-  }
-
-  async function copyGraphExport(format: GraphExportFormat) {
-    setExportLoading(true);
-    setExportError(null);
-    setExportStatus(null);
-    try {
-      const output = await fetchGraphExport(visibleGraphRequest, format);
-      await navigator.clipboard.writeText(output);
-      setExportStatus(`Copied ${format.toUpperCase()}`);
-      window.setTimeout(() => setExportStatus(null), 2000);
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : `Failed to copy ${format}`);
-    } finally {
-      setExportLoading(false);
-    }
-  }
-
-  async function downloadGraphExport(format: GraphExportFormat) {
-    setExportLoading(true);
-    setExportError(null);
-    setExportStatus(null);
-    try {
-      const output = await fetchGraphExport(visibleGraphRequest, format);
-      downloadTextFile(output, exportFilename(format), exportMimeType(format));
-      setExportStatus(`Downloaded ${format.toUpperCase()}`);
-      window.setTimeout(() => setExportStatus(null), 2000);
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : `Failed to download ${format}`);
-    } finally {
-      setExportLoading(false);
-    }
-  }
-
   function changeGraphMode(nextMode: GraphMode) {
     setGraphMode(nextMode);
     if (!graphLoadedRef.current && nextMode === "package") {
@@ -636,14 +596,56 @@ export default function Home() {
   }
 
   const visibleGraphRequest = loadedGraphRequest ?? buildGraphRequest();
+  const graphSurface = (
+    <section className={graphFullscreen ? "fixed inset-0 z-50 min-h-0 min-w-0 overflow-hidden bg-paper" : "relative min-h-0 min-w-0 overflow-hidden"}>
+      {!graphFullscreen ? (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed((value) => !value)}
+          aria-label={sidebarCollapsed ? "Show control panel" : "Hide control panel"}
+          title={sidebarCollapsed ? "Show panel" : "Hide panel"}
+          className="absolute left-4 top-4 z-20 grid h-9 w-9 place-items-center rounded-md border border-line bg-white font-mono text-lg font-semibold leading-none text-ink shadow-sm transition hover:border-moss hover:text-moss"
+        >
+          {sidebarCollapsed ? ">" : "<"}
+        </button>
+      ) : null}
+      <FullscreenGraphButton fullscreen={graphFullscreen} onClick={() => setGraphFullscreen((value) => !value)} />
+      {graphMode === "package" ? (
+        <PackageGraphView
+          key={`${graphFullscreen ? "fullscreen" : "windowed"}-${sidebarCollapsed ? "package-graph-collapsed" : "package-graph-expanded"}`}
+          graph={packageGraph}
+          selectedPackageID={selectedPackageID}
+          loading={graphLoading}
+          error={graphError}
+          onPackageSelect={selectPackage}
+          onPackageOpen={openPackage}
+        />
+      ) : (
+        <GraphView
+          key={`${graphFullscreen ? "fullscreen" : "windowed"}-${sidebarCollapsed ? "graph-collapsed" : "graph-expanded"}`}
+          graph={graph}
+          selectedNode={selectedNode}
+          selectedEdgeID={selectedEdgeID}
+          loading={graphLoading}
+          error={graphError}
+          onNodeSelect={loadSource}
+          onEdgeSelect={loadCallsite}
+        />
+      )}
+    </section>
+  );
+
+  if (graphFullscreen) {
+    return graphSurface;
+  }
 
   return (
     <main className="grid h-screen min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
-      <header className="border-b border-line bg-paper/95 px-5 py-4 backdrop-blur">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      <header className="border-b border-line bg-paper/95 px-4 py-2.5 backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-ink">codemap</h1>
-            <p className="mt-1 text-sm text-steel">Go call graph explorer</p>
+            <h1 className="text-xl font-bold text-ink">codemap</h1>
+            <p className="text-xs text-steel">Go call graph explorer</p>
           </div>
           <HeaderSelectionSummary node={selectedNode} modulePrefix={modulePrefix} />
         </div>
@@ -673,20 +675,9 @@ export default function Home() {
               request={visibleGraphRequest}
               summary={graphSummary}
               loading={graphLoading}
-              copyStatus={copyStatus}
               selectedNode={selectedNode}
-              onCopyViewURL={copyViewURL}
               onFocusNode={focusNode}
               onResetToEntry={resetToEntry}
-            />
-            <ExportPanel
-              loading={exportLoading}
-              disabled={graphLoading || !loadedGraphRequest}
-              status={exportStatus}
-              error={exportError}
-              onCopyExport={copyGraphExport}
-              onDownloadExport={downloadGraphExport}
-              onCopyViewURL={copyViewURL}
             />
             {graphMode === "function" ? (
               <CurrentGraphSearchPanel
@@ -748,43 +739,45 @@ export default function Home() {
           </aside>
         ) : null}
 
-        <section className="relative min-h-0 min-w-0 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((value) => !value)}
-            aria-label={sidebarCollapsed ? "Show control panel" : "Hide control panel"}
-            title={sidebarCollapsed ? "Show panel" : "Hide panel"}
-            className="absolute left-4 top-4 z-20 grid h-9 w-9 place-items-center rounded-md border border-line bg-white font-mono text-lg font-semibold leading-none text-ink shadow-sm transition hover:border-moss hover:text-moss"
-          >
-            {sidebarCollapsed ? ">" : "<"}
-          </button>
-          {graphMode === "package" ? (
-            <PackageGraphView
-              key={sidebarCollapsed ? "package-graph-collapsed" : "package-graph-expanded"}
-              graph={packageGraph}
-              selectedPackageID={selectedPackageID}
-              loading={graphLoading}
-              error={graphError}
-              onPackageSelect={selectPackage}
-              onPackageOpen={openPackage}
-            />
-          ) : (
-            <GraphView
-              key={sidebarCollapsed ? "graph-collapsed" : "graph-expanded"}
-              graph={graph}
-              selectedNode={selectedNode}
-              selectedEdgeID={selectedEdgeID}
-              loading={graphLoading}
-              error={graphError}
-              onNodeSelect={loadSource}
-              onEdgeSelect={loadCallsite}
-            />
-          )}
-        </section>
+        {graphSurface}
       </section>
 
       <SourcePanel source={source} loading={sourceLoading} error={sourceError} />
     </main>
+  );
+}
+
+function FullscreenGraphButton({ fullscreen, onClick }: { fullscreen: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={fullscreen ? "Exit graph fullscreen" : "Show graph fullscreen"}
+      title={fullscreen ? "Exit fullscreen" : "Fullscreen graph"}
+      className="absolute right-16 top-4 z-20 grid h-9 w-9 place-items-center rounded-md border border-line bg-white font-mono text-lg font-semibold leading-none text-ink shadow-sm transition hover:border-moss hover:text-moss"
+    >
+      {fullscreen ? <ExitFullscreenIcon /> : <EnterFullscreenIcon />}
+    </button>
+  );
+}
+
+function EnterFullscreenIcon() {
+  return (
+    <span aria-hidden="true" className="relative block h-4 w-4">
+      <span className="absolute left-0 top-0 h-1.5 w-1.5 border-l-2 border-t-2 border-current" />
+      <span className="absolute right-0 top-0 h-1.5 w-1.5 border-r-2 border-t-2 border-current" />
+      <span className="absolute bottom-0 left-0 h-1.5 w-1.5 border-b-2 border-l-2 border-current" />
+      <span className="absolute bottom-0 right-0 h-1.5 w-1.5 border-b-2 border-r-2 border-current" />
+    </span>
+  );
+}
+
+function ExitFullscreenIcon() {
+  return (
+    <span aria-hidden="true" className="relative block h-4 w-4">
+      <span className="absolute left-1/2 top-0 h-4 w-0.5 -translate-x-1/2 rotate-45 rounded bg-current" />
+      <span className="absolute left-1/2 top-0 h-4 w-0.5 -translate-x-1/2 -rotate-45 rounded bg-current" />
+    </span>
   );
 }
 
@@ -866,42 +859,18 @@ function writeURLState(options: GraphRequest) {
   window.history.replaceState(null, "", `${window.location.pathname}?${serializeViewState(options).toString()}`);
 }
 
-function exportFilename(format: GraphExportFormat): string {
-  const extension = format === "mermaid" ? "mmd" : format;
-  return `codemap-graph.${extension}`;
-}
-
-function exportMimeType(format: GraphExportFormat): string {
-  return format === "json" ? "application/json" : "text/plain";
-}
-
-function downloadTextFile(content: string, filename: string, mimeType: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
-}
-
 function HeaderSelectionSummary({ node, modulePrefix }: { node: GraphNode | null; modulePrefix: string }) {
   if (!node) {
-    return <div className="rounded-md border border-line bg-white px-3 py-2 font-mono text-xs text-steel">API /api/*</div>;
+    return <div className="rounded-md border border-line bg-white px-2.5 py-1.5 font-mono text-xs text-steel">API /api/*</div>;
   }
 
   return (
-    <div className="grid max-w-[min(520px,100%)] min-w-0 gap-1 rounded-md border border-line bg-white px-3 py-2 text-right shadow-sm">
-      <p className="truncate text-sm font-semibold text-ink">{node.label}</p>
-      <p className="truncate font-mono text-xs text-steel" title={node.id}>
+    <div className="grid max-w-[min(520px,100%)] min-w-0 gap-0.5 rounded-md border border-line bg-white px-2.5 py-1.5 text-right shadow-sm">
+      <p className="truncate text-xs font-semibold text-ink">{node.label}</p>
+      <p className="truncate font-mono text-[11px] text-steel" title={node.id}>
         {displaySymbolID(node.id, modulePrefix)}
       </p>
-      <p className="truncate text-xs text-steel" title={node.file || node.package}>
+      <p className="truncate text-[11px] text-steel" title={node.file || node.package}>
         {node.file || node.package}
       </p>
     </div>

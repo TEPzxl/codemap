@@ -1,4 +1,4 @@
-# codemap v0.2 Demo
+# codemap v0.3 Demo
 
 This demo uses `examples/layered-service`, a small Go service with `cmd/api`, handler, service, and repository packages.
 
@@ -26,13 +26,17 @@ http://localhost:8080
 
 ## Walkthrough
 
-1. In `Entry symbol`, search for `main.main` or select the `main` symbol from `cmd/api/main.go`.
+1. In `Entrypoints`, select the `main` function, or search `main.main` in `Entry symbol`.
 2. Click `Load graph`.
-3. The default graph shows the local business chain from `main` through handler, service, and repository.
-4. Click a node such as `UserService.CreateUser` to view its source in the bottom panel.
-5. Click an edge to view the callsite line that produced that edge.
-6. Use `Depth` to limit traversal.
-7. Use graph filters to show external calls, unresolved calls, interface calls, or expanded interface candidates.
+3. The default function graph shows the local business chain from `main` through handler, service, and repository.
+4. Use `Depth` and `Graph filters` to change traversal and visibility.
+5. Click a node such as `UserService.CreateUser` to view its source in the bottom panel.
+6. Click an edge to view the callsite line that produced that edge.
+7. Check `Current graph` for node, edge, package, and resolution counts.
+8. Select a node and use `Focus downstream`, `Focus upstream`, or `Focus neighborhood`.
+9. Use `Path search` to find a static call path between two symbols.
+10. Switch `Graph view` to `Package graph` to inspect package-level call aggregation.
+11. Click `Rescan` after changing local source files.
 
 ## Interface Candidate Expansion
 
@@ -61,10 +65,6 @@ curl -s http://localhost:8080/api/meta | python -m json.tool
 curl -s -X POST http://localhost:8080/api/rescan | python -m json.tool
 ```
 
-## Screenshot
-
-![codemap UI](codemap-ui.png)
-
 ## Real Project Baseline
 
 真实项目 demo 和 v0.3 baseline 记录见：[real-projects.md](real-projects.md)。
@@ -77,3 +77,5 @@ curl -s -X POST http://localhost:8080/api/rescan | python -m json.tool
 - Dynamic calls through function variables may be marked `unresolved`.
 - Standard library and third-party calls are hidden unless filters enable them.
 - The graph is a static approximation, not a runtime trace.
+- Path search uses the static call graph and does not prove a runtime path.
+- Package graph is aggregated from function and method calls, not import declarations.

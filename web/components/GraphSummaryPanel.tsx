@@ -9,9 +9,7 @@ interface GraphSummaryPanelProps {
   request: GraphRequest;
   summary: GraphSummary;
   loading?: boolean;
-  copyStatus: string | null;
   selectedNode: GraphNode | null;
-  onCopyViewURL: () => void;
   onFocusNode: (node: GraphNode, direction: GraphDirection) => void;
   onResetToEntry: () => void;
 }
@@ -21,9 +19,7 @@ export function GraphSummaryPanel({
   request,
   summary,
   loading,
-  copyStatus,
   selectedNode,
-  onCopyViewURL,
   onFocusNode,
   onResetToEntry,
 }: GraphSummaryPanelProps) {
@@ -32,20 +28,11 @@ export function GraphSummaryPanel({
 
   return (
     <section className="grid min-w-0 gap-3 rounded-md border border-line bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-ink">Current graph</h2>
-          <p className="mt-1 break-all font-mono text-xs leading-5 text-steel" title={entry}>
-            {entry || "No entry loaded"}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onCopyViewURL}
-          className="h-8 shrink-0 rounded-md border border-line bg-white px-3 text-xs font-semibold text-ink transition hover:border-moss hover:text-moss"
-        >
-          Copy view URL
-        </button>
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold text-ink">Current graph</h2>
+        <p className="mt-1 break-all font-mono text-xs leading-5 text-steel" title={entry}>
+          {entry || "No entry loaded"}
+        </p>
       </div>
 
       <dl className="grid min-w-0 grid-cols-2 gap-2 text-xs min-[1280px]:grid-cols-4">
@@ -83,7 +70,6 @@ export function GraphSummaryPanel({
         </div>
       ) : null}
 
-      {copyStatus ? <p className="text-xs text-moss">{copyStatus}</p> : null}
       {loading ? <p className="text-xs text-steel">Refreshing graph</p> : null}
     </section>
   );

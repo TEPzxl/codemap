@@ -1,298 +1,204 @@
 # codemap
 
-`codemap` 是一个本地优先的 Go 静态分析与调用图浏览工具。它扫描本地 Go module 或 workspace，提取静态可解析的函数与方法调用关系，并提供一个基于 React Flow 的交互式 Web UI，用于查看调用链、源码片段和调用点。
+`codemap` 是一个本地优先的 Go 代码调用关系可视化工具。它会扫描你机器上的 Go module / workspace，提取函数、方法和静态可解析的调用关系，然后用 Web UI 展示调用图。点击图上的节点或边，可以直接查看对应源码片段或调用点。
 
-## v0.3 功能
+它适合用来回答这些问题：
 
-v0.3 的主题是 **Focused Graph Exploration**：在不改变 Graph JSON Schema 必填字段、不改变 v0.2 `/api/graph` 默认行为的前提下，让用户能从入口、节点、路径和 package 维度探索更大的静态调用图。
+- 一个 Go 项目的入口函数会一路调用到哪些业务模块？
+- 某个 handler / service / repository 方法被谁调用，又继续调用了谁？
+- 一个大项目里有哪些 package 之间存在业务调用关系？
+- 看不懂一段代码时，能不能先用图把主干调用链找出来？
 
-- 使用 `go/packages` 扫描本地 Go module。
-- 提取函数和方法 symbol，并生成稳定 ID。
-- 提取 resolved、interface、external 和 unresolved 调用。
-- 从入口 symbol 构建带 depth 限制的调用图。
-- 通过 `--expand-interface` / `expand_interface=true` 展开接口实现候选。
-- CLI、HTTP API 和本地 Web UI 使用一致的图过滤选项。
-- Web 支持 symbol 搜索、package filter、depth 控制、graph filter toggles、graph summary 和 URL view state。
-- 支持从任意节点做 downstream、upstream 和 neighborhood focus。
-- 支持 symbol path search，用静态调用图查询 `from` 到 `to` 的调用路径。
-- 支持从函数/方法调用图聚合 package-level call overview。
-- 支持启发式 entrypoint discovery，优先展示 `main` functions。
-- Web 支持当前图搜索、节点跳转、邻居高亮、sidebar collapse 和加载/错误状态展示。
-- 支持当前视图导出 JSON、Mermaid、DOT，并复制可分享 view URL。
-- 通过 `/api/source` 查看节点源码。
-- 通过 `/api/callsite` 查看边对应的调用点源码。
-- 通过 `/api/meta` 查看项目元信息。
-- 通过 `/api/rescan` 手动刷新缓存索引。
-- Go server binary 内嵌静态 Web 资源。
+`codemap` 不会上传你的代码，不依赖数据库，也不使用 LLM。分析和展示都在本地完成。
 
-默认行为保持保守：默认隐藏标准库和第三方调用，默认隐藏 unresolved 调用，并且只有显式启用时才展示接口实现候选。
+## 效果预览
 
-## 技术栈
+分布式 KV 项目的调用图：
 
-- Go、`go/packages`、`go/ast`、`go/types`、`net/http`、`embed`
-- Next.js、React、TypeScript、Tailwind CSS、React Flow
-- 通过 Corepack 使用 pnpm 管理前端依赖
+![distributed kv graph demo](docs/demo/demo-distributekv.png)
 
-## 安装
+Web 项目 `contentflow` (个人Web项目Feed推荐流)的调用图和源码面板：
+
+![contentflow graph demo](docs/demo/demo-contentflow.png)
+
+## 快速开始
 
 前置要求：
 
-- Go 1.25 或更新版本
-- 带 Corepack 的 Node.js
+- Go 1.25.0 或更新版本，以 `go.mod` 为准
+- Node.js 24 或兼容版本，并启用 Corepack
+- pnpm 由 Corepack 管理，CI 使用 `pnpm@10.20.0`
 
-安装前端依赖：
+从仓库根目录运行：
 
 ```bash
 make install
-```
-
-## 构建与测试
-
-运行完整质量门禁：
-
-```bash
-make check
-```
-
-`make check` 会运行 Go 测试、fixture 项目的 CLI smoke check、v0.1 golden output 校验、前端 lint、TypeScript 检查和 Next 生产构建。
-
-构建静态 Web UI 并写入 Go embed 使用的目录：
-
-```bash
-make web-build
-```
-
-构建本地 Go binary：
-
-```bash
-make build
-```
-
-binary 会输出到：
-
-```text
-bin/codemap
-```
-
-`go build` 不会运行 pnpm。如果希望 binary 包含当前前端产物，请先运行 `make web-build`，再运行 `make build`。
-
-构建 release binaries：
-
-```bash
-make release
-```
-
-release 产物会输出到：
-
-```text
-dist/codemap-linux-amd64
-dist/codemap-darwin-arm64
-dist/codemap-darwin-amd64
-```
-
-v0.3 release 前建议完整运行：
-
-```bash
-make check
-make web-build
-make build
-make release
-./scripts/smoke.sh
-```
-
-## 快速 Demo
-
-运行 layered-service demo：
-
-```bash
 make web-build
 make build
 ./bin/codemap serve ./examples/layered-service --port 8080
 ```
 
-打开：
+打开浏览器：
 
 ```text
 http://localhost:8080
 ```
 
-在 UI 中：
+在页面中：
 
-1. 搜索或选择 `main.main`。
+1. 在 `Entrypoints` 中选择 `main`，或在 `Entry symbol` 搜索 `main.main`。
 2. 点击 `Load graph`。
 3. 查看 `main -> handler -> service -> repository` 调用链。
-4. 点击 `UserService.CreateUser` 查看节点源码。
-5. 点击一条边查看调用点所在行。
-6. 查看 `Current graph` 摘要，确认 nodes、edges、packages 和 resolution 分布。
-7. 选中任意节点后使用 `Focus downstream`、`Focus upstream` 或 `Focus neighborhood` 聚焦子图。
-8. 使用 `Search current graph` 按 label、id、package 或 file 查找节点，点击结果会选中节点并移动图视口。
-9. 点击节点后查看直接上游/下游节点和相关边高亮。
-10. 折叠左侧 sidebar 给大图留出更多空间。
-11. 使用 `Reset to entry` 回到原始入口图。
-12. 使用 `Path search` 查询两个 symbols 之间的调用路径，结果会切换为 path graph。
-13. 切换到 `Package graph` 查看 package-level call overview，并点击 package 节点设置 package filter。
-14. 双击 package 节点切回 function graph 并按该 package 过滤。
-15. 在 `Entrypoints` 列表中点击候选入口，自动加载对应 graph。
-16. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
-17. 使用 `Export` 复制或下载当前 view 参数对应的 JSON、Mermaid、DOT。
-18. 点击 `Copy view URL` 复制当前视图链接。
-19. 修改本地源码后点击 `Rescan` 刷新索引。
+4. 点击节点查看函数源码。
+5. 点击边查看调用点源码。
+6. 调整 `Depth` 控制调用深度。
+7. 点击图右上角全屏按钮，只看调用图。
 
-更多说明见：[docs/demo/README.md](docs/demo/README.md)。
+## 分析自己的 Go 项目
 
-![codemap UI screenshot](docs/demo/codemap-ui.png)
+构建一次 binary 后，可以直接把任意本地 Go 项目路径传给 `serve`：
 
-## Real Project Demo
+```bash
+./bin/codemap serve /path/to/your/go/project --port 8080
+```
 
-v0.3 的主题是 **Focused Graph Exploration**。`codemap` 已用两个真实 Go 项目建立 baseline：
+例如：
 
-- `contentflow`：28 packages、345 symbols、1572 calls、0 warnings。
-- `raft-kv-extended`：7 packages、161 symbols、753 calls、0 warnings。
+```bash
+./bin/codemap serve /home/tep/dev/tutorial/distributedkv --port 8080
+./bin/codemap serve /home/tep/dev/real_project/contentflow --port 8080
+```
 
-真实项目从 `main` 入口展开时会快速形成更密的调用图，因此 v0.3 会围绕聚焦入口、路径和 package 的大图探索体验继续推进。详细记录见：[docs/demo/real-projects.md](docs/demo/real-projects.md)。
+如果你正在开发 `codemap`，也可以不构建 binary，直接运行：
 
-## CLI 示例
+```bash
+go run ./cmd/codemap serve ./examples/layered-service --port 8080
+```
 
-扫描 packages：
+默认行为比较保守：
+
+- 默认忽略 `_test.go`。
+- 默认隐藏标准库和第三方依赖调用。
+- 默认隐藏 unresolved 调用。
+- 接口调用默认只标记为 `interface`，只有启用 `Expand interface candidates` 才展示候选实现。
+
+## Web UI 怎么用
+
+左侧是控制区，右侧是调用图，底部是源码面板。
+
+常用操作：
+
+- `Entrypoints`：自动发现候选入口，优先展示 `main` 函数，也会提示 handler、service、goroutine starter 等候选。
+- `Entry symbol`：手动搜索函数或方法，支持按 label、id、package、file、receiver 搜索。
+- `Depth`：控制从入口向下展开几层调用。
+- `Graph filters`：按需显示 external、unresolved、interface 调用，或展开接口候选实现。
+- `Current graph`：查看当前图的节点数、边数、package 数和 resolution 分布。
+- `Focus downstream`：从选中节点向下看它调用了谁。
+- `Focus upstream`：从选中节点向上看谁调用了它。
+- `Focus neighborhood`：同时看选中节点的上下游邻域。
+- `Search current graph`：在当前图里快速定位节点。
+- `Package graph`：把函数调用图聚合成 package-level overview。
+- `Path search`：查询两个 symbols 之间的静态调用路径。
+- `Rescan`：本地源码修改后，重新扫描项目。
+- 图区域右上角全屏按钮：隐藏侧栏和源码面板，只显示当前 graph。
+
+## CLI 常用命令
+
+扫描 package：
 
 ```bash
 go run ./cmd/codemap scan ./examples/simple
 ```
 
-列出 symbols：
+列出函数和方法：
 
 ```bash
 go run ./cmd/codemap symbols ./examples/layered-service
 ```
 
-列出 calls：
+列出调用边：
 
 ```bash
 go run ./cmd/codemap calls ./examples/layered-service
 ```
 
-发现候选入口：
+发现入口候选：
 
 ```bash
 go run ./cmd/codemap entrypoints ./examples/layered-service
 ```
 
-构建调用图：
+从入口构建调用图：
 
 ```bash
 go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5
 ```
 
-导出当前调用图：
+查看上游调用：
 
 ```bash
-go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format json
-go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format mermaid
-go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format dot
-go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format mermaid --out graph.mmd
+go run ./cmd/codemap graph ./examples/layered-service \
+  --entry 'github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser' \
+  --depth 2 \
+  --direction upstream
 ```
 
-从选中节点查看上游调用：
+查询两个 symbols 之间的静态调用路径：
 
 ```bash
-go run ./cmd/codemap graph ./examples/layered-service --entry 'github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser' --depth 2 --direction upstream
+go run ./cmd/codemap path ./examples/layered-service \
+  --from main.main \
+  --to UserRepository.Save \
+  --max-depth 8 \
+  --limit 5
 ```
 
-查看上下游邻域：
-
-```bash
-go run ./cmd/codemap graph ./examples/layered-service --entry 'github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser' --depth 1 --direction both
-```
-
-查找两个 symbols 之间的调用路径：
-
-```bash
-go run ./cmd/codemap path ./examples/layered-service --from main.main --to UserRepository.Save --max-depth 8 --limit 5
-```
-
-查看 package-level call overview：
+查看 package 级调用概览：
 
 ```bash
 go run ./cmd/codemap packages ./examples/layered-service
 go run ./cmd/codemap packages ./examples/layered-service --entry main.main --depth 5
 ```
 
-显示 external calls：
-
-```bash
-go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --show-external
-```
-
-显示 unresolved calls：
-
-```bash
-go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --show-unresolved
-```
-
-显示 interface calls，但不展开候选实现：
+展示 interface 调用或候选实现：
 
 ```bash
 go run ./cmd/codemap graph ./examples/interface-call --entry main.main --depth 5 --show-interface
-```
-
-展开接口实现候选：
-
-```bash
 go run ./cmd/codemap graph ./examples/interface-call --entry main.main --depth 5 --expand-interface
 ```
 
-按 package 或 node limit 过滤：
+导出 JSON、Mermaid 或 DOT：
 
 ```bash
-go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --package github.com/tepzxl/codemap/examples/layered-service/internal/service
-go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --node-limit 100
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format json
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format mermaid
+go run ./cmd/codemap export ./examples/layered-service --entry main.main --depth 5 --format dot
 ```
 
-启动 API 和 UI：
+## HTTP API
+
+启动服务：
 
 ```bash
 go run ./cmd/codemap serve ./examples/layered-service --port 8080
 ```
 
-## HTTP API
-
-Health：
+常用接口：
 
 ```bash
 curl -s http://localhost:8080/api/health
-```
-
-Metadata：
-
-```bash
 curl -s http://localhost:8080/api/meta | python -m json.tool
-```
-
-手动 rescan：
-
-```bash
+curl -s http://localhost:8080/api/symbols | python -m json.tool
+curl -s http://localhost:8080/api/entrypoints | python -m json.tool
+curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5" | python -m json.tool
+curl -s "http://localhost:8080/api/path?from=main.main&to=UserRepository.Save&max_depth=8&limit=5" | python -m json.tool
+curl -s "http://localhost:8080/api/package-graph?entry=main.main&depth=5" | python -m json.tool
+curl -s "http://localhost:8080/api/source?node_id=<symbol-id>" | python -m json.tool
+curl -s "http://localhost:8080/api/callsite?edge_id=<edge-id>&entry=main.main&depth=5" | python -m json.tool
 curl -s -X POST http://localhost:8080/api/rescan | python -m json.tool
 ```
 
-Symbols：
-
-```bash
-curl -s http://localhost:8080/api/symbols
-```
-
-Entrypoints：
-
-```bash
-curl -s http://localhost:8080/api/entrypoints
-```
-
-Graph：
-
-```bash
-curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5"
-```
-
-Export：
+导出接口：
 
 ```bash
 curl -s "http://localhost:8080/api/export?entry=main.main&depth=5&format=json"
@@ -300,117 +206,20 @@ curl -s "http://localhost:8080/api/export?entry=main.main&depth=5&format=mermaid
 curl -s "http://localhost:8080/api/export?entry=main.main&depth=5&format=dot"
 ```
 
-Focus graph：
-
-```bash
-curl -s "http://localhost:8080/api/graph?entry=github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser&depth=2&direction=upstream"
-curl -s "http://localhost:8080/api/graph?entry=github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser&depth=1&direction=both"
-```
-
-Path search：
-
-```bash
-curl -s "http://localhost:8080/api/path?from=main.main&to=UserRepository.Save&max_depth=8&limit=5"
-```
-
-Package graph：
-
-```bash
-curl -s "http://localhost:8080/api/package-graph"
-curl -s "http://localhost:8080/api/package-graph?entry=main.main&depth=5"
-```
-
-带过滤条件的 Graph：
-
-```bash
-curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&show_external=true"
-curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&show_unresolved=true"
-curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&show_interface=true"
-curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&expand_interface=true"
-curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&package=github.com/tepzxl/codemap/examples/layered-service/internal/service"
-curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&node_limit=100"
-```
-
-节点源码：
-
-```bash
-curl -s "http://localhost:8080/api/source?node_id=<symbol-id>"
-```
-
-边调用点：
-
-```bash
-curl -s "http://localhost:8080/api/callsite?edge_id=<edge-id>&entry=main.main&depth=5"
-```
-
-Warnings：
-
-```bash
-curl -s http://localhost:8080/api/warnings
-```
-
-## CI
-
-GitHub Actions 会运行：
-
-```bash
-make check
-make web-build
-make build
-```
-
-workflow 会启用 Corepack，并激活 `web/package.json` 中声明的 pnpm 版本。
-
-## 开发
-
-运行 Go 测试：
-
-```bash
-make test-go
-```
-
-运行前端检查：
-
-```bash
-make test-web
-```
-
-运行单独的前端门禁：
-
-```bash
-make web-lint
-make web-typecheck
-make build-web
-```
-
-分别启动 Go API 和 Next dev server：
-
-```bash
-make dev-api
-make dev-web
-```
-
-或者同时启动：
-
-```bash
-make dev
-```
-
-默认开发地址：
+## 项目结构
 
 ```text
-Go API: http://localhost:18080
-Web UI: http://127.0.0.1:3000
+cmd/codemap/          CLI 入口
+internal/analyzer/    go/packages、AST、types 分析
+internal/graph/       调用图、路径查询、package graph、导出
+internal/source/      源码片段读取
+internal/server/      HTTP API 和静态 Web 资源
+web/                  Next.js + React Flow 前端
+examples/             可用于 smoke test 的 Go fixture 项目
+docs/                 demo、release、golden output 和阶段文档
 ```
 
-按需覆盖端口：
-
-```bash
-make dev-web WEB_PORT=3001
-make dev-api API_PORT=8080
-```
-
-## 架构
+数据流：
 
 ```text
 Local Go repo
@@ -424,25 +233,71 @@ Local Go repo
   -> source and callsite APIs
 ```
 
-前端不会扫描本地文件，也不会使用 Next API routes 承担核心分析职责。Go server 负责 package loading、analysis、graph building、source reading、cached index metadata 和 API responses。
+前端只负责展示，不扫描本地文件，也不使用 Next API Routes 承担核心分析职责。Go server 负责 package loading、analysis、graph building、source reading、cached index metadata 和 API responses。
+
+## 开发命令
+
+安装前端依赖：
+
+```bash
+make install
+```
+
+完整质量门禁：
+
+```bash
+make check
+```
+
+`make check` 会运行 Go 测试、CLI smoke test、golden output 校验、前端 lint、TypeScript 检查和 Next 生产构建。
+
+单独运行：
+
+```bash
+make test-go
+make smoke
+make verify-golden
+make web-lint
+make web-typecheck
+make build-web      # 只构建 web/out/
+make web-build      # 构建 web/out/ 并同步到 internal/server/static/
+make build          # 构建 bin/codemap
+```
+
+本地前后端分离开发：
+
+```bash
+make dev-api
+make dev-web
+```
+
+默认地址：
+
+```text
+Go API: http://localhost:18080
+Web UI: http://127.0.0.1:3000
+```
 
 ## 当前限制
 
-- 只支持本地 Go 项目。
-- 不支持远程 GitHub URL 扫描。
+- 只支持本地 Go 项目，不支持远程 GitHub URL 扫描。
 - 默认忽略 `_test.go` 文件。
+- 调用图是静态近似结果，不是运行时精确 trace。
 - interface candidate expansion 是静态保守候选，不等同于运行时真实分派。
-- 通过函数变量触发的动态调用可能会标记为 `unresolved`。
-- 调用图是静态近似结果，不是运行时精确调用链。
+- 通过函数变量、reflection 或复杂动态分派触发的调用可能会标记为 `unresolved`。
 - Path search 查询的是静态调用图路径，不代表运行时必经路径。
 - Package graph 是从函数/方法 call graph 聚合得到，不是 import graph。
-- Entrypoint discovery 是基于 main/exported/name/handler/goroutine 的启发式推荐，不保证完整或绝对准确。
+- Entrypoint discovery 是启发式推荐，不保证完整或绝对准确。
 - 标准库和第三方调用默认隐藏，除非显式启用。
 - 不包含数据库、编辑器插件或 LLM 解释层。
 
-## Upgrade notes
+## 版本说明
 
-- v0.3 没有改变 Graph JSON Schema 的必填字段。
+当前版本主题是 `v0.3 Focused Graph Exploration`。
+
+- Graph JSON Schema 的必填字段保持稳定。
 - `/api/graph` 默认仍按 downstream 方向、depth 5 和保守过滤返回函数级调用图。
-- `/api/path`、`/api/package-graph`、`/api/entrypoints` 和 `/api/export` 是新增的 additive API。
+- `/api/path`、`/api/package-graph`、`/api/entrypoints` 和 `/api/export` 是 additive API。
 - 发布前运行 `make web-build`，确保 `internal/server/static/` 与当前 Web UI 一致。
+
+更多 demo 和 baseline 记录见 [docs/demo/README.md](docs/demo/README.md) 与 [docs/demo/real-projects.md](docs/demo/real-projects.md)。
