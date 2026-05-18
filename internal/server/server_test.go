@@ -472,6 +472,67 @@ func TestAPIGraphExternalAndUnresolvedFilters(t *testing.T) {
 	})
 }
 
+func TestAPIPath(t *testing.T) {
+	project := loadTestProject(t)
+	handler := NewHandler(project)
+
+	t.Run("finds layered service path", func(t *testing.T) {
+		got := requestPath(t, handler, "/api/path?from=main.main&to=UserRepository.Save&max_depth=8&limit=5")
+		if len(got.Paths) != 1 {
+			t.Fatalf("path count = %d, want 1: %#v", len(got.Paths), got.Paths)
+		}
+		wantTo := "github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save"
+		if got.To != wantTo {
+			t.Fatalf("to = %q, want %q", got.To, wantTo)
+		}
+		if len(got.Graph.Nodes) == 0 || len(got.Graph.Edges) == 0 {
+			t.Fatalf("expected path graph, got %#v", got.Graph)
+		}
+	})
+
+	t.Run("unreachable returns empty paths with warning", func(t *testing.T) {
+		got := requestPath(t, handler, "/api/path?from=main.main&to=UserRepository.Save&max_depth=1&limit=5")
+		if len(got.Paths) != 0 {
+			t.Fatalf("expected no paths, got %#v", got.Paths)
+		}
+		if len(got.Warnings) == 0 || got.Warnings[0].Code != "path-not-found" {
+			t.Fatalf("expected path-not-found warning, got %#v", got.Warnings)
+		}
+	})
+}
+
+func TestAPIPathMatchesCLI(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	project := loadTestProject(t)
+	handler := NewHandler(project)
+
+	apiPath := requestPath(t, handler, "/api/path?from=main.main&to=UserRepository.Save&max_depth=8&limit=5")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := cliRunGraphForServerTest([]string{
+		"path",
+		filepath.Join(repoRoot, "examples", "layered-service"),
+		"--from", "main.main",
+		"--to", "UserRepository.Save",
+		"--max-depth", "8",
+		"--limit", "5",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("path command exit code = %d, stderr = %s", code, stderr.String())
+	}
+	var cliPath graphmodel.PathResult
+	if err := json.Unmarshal(stdout.Bytes(), &cliPath); err != nil {
+		t.Fatalf("CLI path output is not json: %v\n%s", err, stdout.String())
+	}
+
+	left, _ := json.Marshal(apiPath)
+	right, _ := json.Marshal(cliPath)
+	if string(left) != string(right) {
+		t.Fatalf("API and CLI path differ:\napi=%s\ncli=%s", left, right)
+	}
+}
+
 func TestAPIGraphMatchesCLIForSameFilters(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	project, err := LoadProject(filepath.Join(repoRoot, "examples", "interface-call"))
@@ -520,6 +581,10 @@ func TestAPIErrors(t *testing.T) {
 		{name: "invalid graph direction", path: "/api/graph?entry=main.main&direction=sideways", want: http.StatusBadRequest},
 		{name: "invalid graph bool", path: "/api/graph?entry=main.main&show_external=maybe", want: http.StatusBadRequest},
 		{name: "invalid graph node limit", path: "/api/graph?entry=main.main&node_limit=-1", want: http.StatusBadRequest},
+		{name: "missing path from", path: "/api/path?to=UserRepository.Save", want: http.StatusBadRequest},
+		{name: "unknown path from", path: "/api/path?from=not.exists&to=UserRepository.Save", want: http.StatusBadRequest},
+		{name: "invalid path max depth", path: "/api/path?from=main.main&to=UserRepository.Save&max_depth=-1", want: http.StatusBadRequest},
+		{name: "invalid path limit", path: "/api/path?from=main.main&to=UserRepository.Save&limit=-1", want: http.StatusBadRequest},
 		{name: "package filter removes all nodes", path: "/api/graph?entry=main.main&package=example.com/no-match", want: http.StatusBadRequest},
 		{name: "missing graph entry", path: "/api/graph?depth=5", want: http.StatusBadRequest},
 		{name: "missing callsite edge", path: "/api/callsite?entry=main.main&depth=5", want: http.StatusBadRequest},
@@ -547,6 +612,20 @@ func TestAPIErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func requestPath(t *testing.T, handler http.Handler, path string) graphmodel.PathResult {
+	t.Helper()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	var got graphmodel.PathResult
+	decodeJSON(t, rr, &got)
+	return got
 }
 
 func TestSourcePathTraversalReturnsJSONError(t *testing.T) {

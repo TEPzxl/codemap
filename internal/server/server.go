@@ -106,6 +106,7 @@ func NewHandler(project *Project) http.Handler {
 	mux.HandleFunc("/api/rescan", project.handleRescan)
 	mux.HandleFunc("/api/symbols", project.handleSymbols)
 	mux.HandleFunc("/api/graph", project.handleGraph)
+	mux.HandleFunc("/api/path", project.handlePath)
 	mux.HandleFunc("/api/source", project.handleSource)
 	mux.HandleFunc("/api/callsite", project.handleCallsite)
 	mux.HandleFunc("/api/warnings", project.handleWarnings)
@@ -159,6 +160,16 @@ func (p *Project) BuildGraph(options graphmodel.BuildOptions) (graphmodel.Graph,
 		calls = p.ExpandedCalls
 	}
 	return graphmodel.BuildGraph(toGraphSymbols(p.Symbols), toGraphCalls(calls), options)
+}
+
+func (p *Project) FindPaths(options graphmodel.PathOptions) (graphmodel.PathResult, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	calls := p.Calls
+	if options.ExpandInterface {
+		calls = p.ExpandedCalls
+	}
+	return graphmodel.FindPaths(toGraphSymbols(p.Symbols), toGraphCalls(calls), options)
 }
 
 func (p *Project) sourceSymbol(nodeID string) (string, analyzer.Symbol, bool) {

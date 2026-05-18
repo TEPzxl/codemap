@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
 import { GraphView } from "@/components/GraphView";
+import { PathSearchPanel } from "@/components/PathSearchPanel";
 import { ProjectMetaPanel } from "@/components/ProjectMetaPanel";
 import { SourcePanel } from "@/components/SourcePanel";
 import { SymbolSearch } from "@/components/SymbolSearch";
@@ -13,6 +14,7 @@ import {
   fetchCallsite,
   fetchGraph,
   fetchMeta,
+  fetchPath,
   fetchSource,
   fetchSymbols,
   fetchWarnings,
@@ -22,7 +24,7 @@ import {
 import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
 import { summarizeGraph } from "@/lib/graphSummary";
 import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
-import type { Edge as GraphEdge, Graph, GraphDirection, Node as GraphNode, ProjectMeta, SourceView, SymbolInfo, Warning } from "@/types/graph";
+import type { Edge as GraphEdge, Graph, GraphDirection, Node as GraphNode, PathResult, ProjectMeta, SourceView, SymbolInfo, Warning } from "@/types/graph";
 
 export default function Home() {
   const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
@@ -37,6 +39,12 @@ export default function Home() {
   const [expandInterface, setExpandInterface] = useState(false);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [loadedGraphRequest, setLoadedGraphRequest] = useState<GraphRequest | null>(null);
+  const [pathFrom, setPathFrom] = useState("main.main");
+  const [pathTo, setPathTo] = useState("");
+  const [pathMaxDepth, setPathMaxDepth] = useState(8);
+  const [pathLimit, setPathLimit] = useState(5);
+  const [pathResult, setPathResult] = useState<PathResult | null>(null);
+  const [selectedPathIndex, setSelectedPathIndex] = useState(0);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<Warning[]>([]);
@@ -45,10 +53,12 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [graphLoading, setGraphLoading] = useState(false);
+  const [pathLoading, setPathLoading] = useState(false);
   const [sourceLoading, setSourceLoading] = useState(false);
   const [rescanLoading, setRescanLoading] = useState(false);
   const [apiError, setAPIError] = useState<string | null>(null);
   const [graphError, setGraphError] = useState<string | null>(null);
+  const [pathError, setPathError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [rescanError, setRescanError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
@@ -89,6 +99,7 @@ export default function Home() {
         const nextExpandInterface = initialState.expandInterface ?? false;
         setEntry(nextEntry);
         setRootEntry(nextEntry);
+        setPathFrom(nextEntry);
         setDepth(nextDepth);
         setDirection(nextDirection);
         setPackageFilter(nextPackageFilter);
@@ -203,6 +214,7 @@ export default function Home() {
         graphRequestRef.current = request;
         setLoadedGraphRequest(request);
         applyGraph(nextGraph, preserveSelection);
+        setPathResult(null);
       } catch (error) {
         if (requestSeqRef.current === requestID) {
           setGraphError(error instanceof Error ? error.message : "Failed to load graph");
@@ -249,6 +261,7 @@ export default function Home() {
   function selectSymbol(symbolID: string) {
     setEntry(symbolID);
     setRootEntry(symbolID);
+    setPathFrom(symbolID);
     setDirection("downstream");
     void loadGraphRequest({ ...buildGraphRequest(symbolID), direction: "downstream" });
   }
@@ -259,8 +272,76 @@ export default function Home() {
       setEntry(resolvedEntry);
     }
     setRootEntry(resolvedEntry);
+    setPathFrom(resolvedEntry);
     setDirection("downstream");
     void loadGraphRequest({ ...buildGraphRequest(resolvedEntry), direction: "downstream" });
+  }
+
+  async function findPath() {
+    const resolvedFrom = resolveEntryInput(pathFrom, symbols, modulePrefix);
+    const resolvedTo = resolveEntryInput(pathTo, symbols, modulePrefix);
+    setPathFrom(resolvedFrom);
+    setPathTo(resolvedTo);
+    setPathLoading(true);
+    setPathError(null);
+    try {
+      const result = await fetchPath({
+        from: resolvedFrom,
+        to: resolvedTo,
+        maxDepth: pathMaxDepth,
+        limit: pathLimit,
+        showExternal,
+        showUnresolved,
+        showInterface,
+        expandInterface,
+        packagePrefix: packageFilter || undefined,
+      });
+      setPathResult(result);
+      setSelectedPathIndex(0);
+      setGraph(result.graph);
+      setWarnings((current) => mergeWarnings(current, result.warnings));
+      setLoadedGraphRequest({
+        entry: result.from,
+        depth: pathMaxDepth,
+        direction: "downstream",
+        showExternal,
+        showUnresolved,
+        showInterface,
+        expandInterface,
+        packagePrefix: packageFilter || undefined,
+      });
+      graphLoadedRef.current = true;
+      graphRequestRef.current = {
+        entry: result.from,
+        depth: pathMaxDepth,
+        direction: "downstream",
+        showExternal,
+        showUnresolved,
+        showInterface,
+        expandInterface,
+        packagePrefix: packageFilter || undefined,
+      };
+      if (result.paths.length > 0) {
+        setSelectedEdgeID(result.paths[0].edges[0] ?? null);
+        setSelectedNode(result.graph.nodes.find((node) => node.id === result.to) ?? result.graph.nodes[0] ?? null);
+      } else {
+        setSelectedEdgeID(null);
+        setSelectedNode(null);
+      }
+      selectedEdgeRef.current = null;
+      setSource(null);
+      setSourceError(null);
+    } catch (error) {
+      setPathError(error instanceof Error ? error.message : "Failed to find path");
+    } finally {
+      setPathLoading(false);
+    }
+  }
+
+  function selectPath(index: number) {
+    setSelectedPathIndex(index);
+    const edgeID = pathResult?.paths[index]?.edges[0] ?? null;
+    setSelectedEdgeID(edgeID);
   }
 
   function focusNode(node: GraphNode, nextDirection: GraphDirection) {
@@ -399,6 +480,25 @@ export default function Home() {
               onShowInterfaceChange={setShowInterface}
               onExpandInterfaceChange={setExpandInterface}
               loading={graphLoading}
+            />
+            <PathSearchPanel
+              symbols={symbols}
+              from={pathFrom}
+              to={pathTo}
+              maxDepth={pathMaxDepth}
+              limit={pathLimit}
+              loading={pathLoading}
+              error={pathError}
+              result={pathResult}
+              selectedPathIndex={selectedPathIndex}
+              modulePrefix={modulePrefix}
+              disabled={symbolsLoading}
+              onFromChange={setPathFrom}
+              onToChange={setPathTo}
+              onMaxDepthChange={setPathMaxDepth}
+              onLimitChange={setPathLimit}
+              onFindPath={findPath}
+              onSelectPath={selectPath}
             />
 
             {apiError ? <p className="rounded-md border border-signal/30 bg-orange-50 p-3 text-sm text-signal">{apiError}</p> : null}

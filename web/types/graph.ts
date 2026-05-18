@@ -11,6 +11,19 @@ export interface Graph {
   warnings: Warning[];
 }
 
+export interface PathResult {
+  from: string;
+  to: string;
+  paths: SymbolPath[];
+  graph: Graph;
+  warnings: Warning[];
+}
+
+export interface SymbolPath {
+  nodes: string[];
+  edges: string[];
+}
+
 export interface Node {
   id: string;
   label: string;

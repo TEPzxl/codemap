@@ -2,6 +2,7 @@ import type {
   CallsiteSnippet,
   Graph,
   GraphDirection,
+  PathResult,
   ProjectMeta,
   RescanResponse,
   SourceSnippet,
@@ -13,6 +14,18 @@ export interface GraphRequest {
   entry: string;
   depth: number;
   direction?: GraphDirection;
+  showExternal?: boolean;
+  showUnresolved?: boolean;
+  showInterface?: boolean;
+  expandInterface?: boolean;
+  packagePrefix?: string;
+}
+
+export interface PathRequest {
+  from: string;
+  to: string;
+  maxDepth: number;
+  limit: number;
   showExternal?: boolean;
   showUnresolved?: boolean;
   showInterface?: boolean;
@@ -87,6 +100,35 @@ function graphParams(options: GraphRequest): URLSearchParams {
 
 export function fetchGraph(options: GraphRequest): Promise<Graph> {
   return requestJSON<Graph>(graphURL(options));
+}
+
+export function pathURL(options: PathRequest): string {
+  const params = new URLSearchParams({
+    from: options.from,
+    to: options.to,
+    max_depth: String(options.maxDepth),
+    limit: String(options.limit),
+  });
+  if (options.showExternal) {
+    params.set("show_external", "true");
+  }
+  if (options.showUnresolved) {
+    params.set("show_unresolved", "true");
+  }
+  if (options.showInterface) {
+    params.set("show_interface", "true");
+  }
+  if (options.expandInterface) {
+    params.set("expand_interface", "true");
+  }
+  if (options.packagePrefix) {
+    params.set("package", options.packagePrefix);
+  }
+  return `/api/path?${params.toString()}`;
+}
+
+export function fetchPath(options: PathRequest): Promise<PathResult> {
+  return requestJSON<PathResult>(pathURL(options));
 }
 
 export function fetchSource(nodeId: string): Promise<SourceSnippet> {

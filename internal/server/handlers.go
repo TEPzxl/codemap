@@ -70,6 +70,23 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, graph)
 }
 
+func (p *Project) handlePath(w http.ResponseWriter, r *http.Request) {
+	if !requireGET(w, r) {
+		return
+	}
+
+	options, ok := parsePathOptions(w, r)
+	if !ok {
+		return
+	}
+	result, err := p.FindPaths(options)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func parseGraphOptions(w http.ResponseWriter, r *http.Request, requireEntry bool) (graphmodel.BuildOptions, bool) {
 	query := r.URL.Query()
 	entry := query.Get("entry")
@@ -147,6 +164,69 @@ func parseBoolQuery(w http.ResponseWriter, raw string, name string) (bool, bool)
 		return false, false
 	}
 	return parsed, true
+}
+
+func parsePathOptions(w http.ResponseWriter, r *http.Request) (graphmodel.PathOptions, bool) {
+	query := r.URL.Query()
+	from := query.Get("from")
+	if from == "" {
+		writeError(w, http.StatusBadRequest, "from is required")
+		return graphmodel.PathOptions{}, false
+	}
+	to := query.Get("to")
+	if to == "" {
+		writeError(w, http.StatusBadRequest, "to is required")
+		return graphmodel.PathOptions{}, false
+	}
+
+	maxDepth := 8
+	if rawMaxDepth := query.Get("max_depth"); rawMaxDepth != "" {
+		parsed, err := strconv.Atoi(rawMaxDepth)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "max_depth must be a non-negative integer")
+			return graphmodel.PathOptions{}, false
+		}
+		maxDepth = parsed
+	}
+
+	limit := 5
+	if rawLimit := query.Get("limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a non-negative integer")
+			return graphmodel.PathOptions{}, false
+		}
+		limit = parsed
+	}
+
+	showExternal, ok := parseBoolQuery(w, query.Get("show_external"), "show_external")
+	if !ok {
+		return graphmodel.PathOptions{}, false
+	}
+	showUnresolved, ok := parseBoolQuery(w, query.Get("show_unresolved"), "show_unresolved")
+	if !ok {
+		return graphmodel.PathOptions{}, false
+	}
+	showInterface, ok := parseBoolQuery(w, query.Get("show_interface"), "show_interface")
+	if !ok {
+		return graphmodel.PathOptions{}, false
+	}
+	expandInterface, ok := parseBoolQuery(w, query.Get("expand_interface"), "expand_interface")
+	if !ok {
+		return graphmodel.PathOptions{}, false
+	}
+
+	return graphmodel.PathOptions{
+		From:            from,
+		To:              to,
+		MaxDepth:        maxDepth,
+		Limit:           limit,
+		ShowExternal:    showExternal,
+		ShowUnresolved:  showUnresolved,
+		ShowInterface:   showInterface,
+		ExpandInterface: expandInterface,
+		PackagePrefixes: query["package"],
+	}, true
 }
 
 func (p *Project) handleSource(w http.ResponseWriter, r *http.Request) {

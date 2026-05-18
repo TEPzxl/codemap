@@ -137,7 +137,7 @@ func resolveEntry(entry string, symbols []Symbol) (string, error) {
 
 	matches := make([]string, 0)
 	for _, symbol := range symbols {
-		if symbol.ID == entry || strings.HasSuffix(symbol.ID, "."+entry) || shortQuery(symbol) == entry {
+		if symbol.ID == entry || symbol.Label == entry || strings.HasSuffix(symbol.ID, "."+entry) || shortQuery(symbol) == entry {
 			matches = append(matches, symbol.ID)
 		}
 	}
