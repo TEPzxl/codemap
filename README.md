@@ -107,14 +107,17 @@ http://localhost:8080
 5. 点击一条边查看调用点所在行。
 6. 查看 `Current graph` 摘要，确认 nodes、edges、packages 和 resolution 分布。
 7. 选中任意节点后使用 `Focus downstream`、`Focus upstream` 或 `Focus neighborhood` 聚焦子图。
-8. 使用 `Reset to entry` 回到原始入口图。
-9. 使用 `Path search` 查询两个 symbols 之间的调用路径，结果会切换为 path graph。
-10. 切换到 `Package graph` 查看 package-level call overview，并点击 package 节点设置 package filter。
-11. 双击 package 节点切回 function graph 并按该 package 过滤。
-12. 在 `Entrypoints` 列表中点击候选入口，自动加载对应 graph。
-13. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
-14. 点击 `Copy view URL` 复制当前视图链接。
-15. 修改本地源码后点击 `Rescan` 刷新索引。
+8. 使用 `Search current graph` 按 label、id、package 或 file 查找节点，点击结果会选中节点并移动图视口。
+9. 点击节点后查看直接上游/下游节点和相关边高亮。
+10. 折叠左侧 sidebar 给大图留出更多空间。
+11. 使用 `Reset to entry` 回到原始入口图。
+12. 使用 `Path search` 查询两个 symbols 之间的调用路径，结果会切换为 path graph。
+13. 切换到 `Package graph` 查看 package-level call overview，并点击 package 节点设置 package filter。
+14. 双击 package 节点切回 function graph 并按该 package 过滤。
+15. 在 `Entrypoints` 列表中点击候选入口，自动加载对应 graph。
+16. 切换 filter 或 depth 来刷新图，当前 entry、depth、direction、filter 和 package 会同步到 URL。
+17. 点击 `Copy view URL` 复制当前视图链接。
+18. 修改本地源码后点击 `Rescan` 刷新索引。
 
 更多说明见：[docs/demo/README.md](docs/demo/README.md)。
 

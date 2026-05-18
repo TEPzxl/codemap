@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { CurrentGraphSearchPanel } from "@/components/CurrentGraphSearchPanel";
 import { EntrypointsPanel } from "@/components/EntrypointsPanel";
 import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
 import { GraphModeToggle, type GraphMode } from "@/components/GraphModeToggle";
@@ -27,6 +28,7 @@ import {
   type GraphRequest,
   type PackageGraphRequest,
 } from "@/lib/api";
+import { searchCurrentGraphNodes } from "@/lib/currentGraphSearch";
 import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
 import { summarizeGraph } from "@/lib/graphSummary";
 import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
@@ -68,6 +70,7 @@ export default function Home() {
   const [pathLimit, setPathLimit] = useState(5);
   const [pathResult, setPathResult] = useState<PathResult | null>(null);
   const [selectedPathIndex, setSelectedPathIndex] = useState(0);
+  const [currentGraphQuery, setCurrentGraphQuery] = useState("");
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null);
   const [selectedPackageID, setSelectedPackageID] = useState<string | null>(null);
@@ -100,6 +103,7 @@ export default function Home() {
 
   const modulePrefix = inferModulePrefix(symbols);
   const graphSummary = useMemo(() => summarizeGraph(graph), [graph]);
+  const currentGraphResults = useMemo(() => searchCurrentGraphNodes(graph, currentGraphQuery), [currentGraphQuery, graph]);
 
   const loadProjectIndex = useCallback(async (applyInitialState: boolean) => {
     setSymbolsLoading(true);
@@ -503,6 +507,11 @@ export default function Home() {
     }
   }
 
+  function jumpToGraphNode(node: GraphNode) {
+    setGraphMode("function");
+    void loadSource(node);
+  }
+
   async function loadCallsite(edge: GraphEdge) {
     setSelectedNode(null);
     selectedEdgeRef.current = edge;
@@ -599,6 +608,17 @@ export default function Home() {
               onFocusNode={focusNode}
               onResetToEntry={resetToEntry}
             />
+            {graphMode === "function" ? (
+              <CurrentGraphSearchPanel
+                query={currentGraphQuery}
+                results={currentGraphResults}
+                selectedNodeID={selectedNode?.id}
+                modulePrefix={modulePrefix}
+                disabled={graphLoading || !graph}
+                onQueryChange={setCurrentGraphQuery}
+                onSelectNode={jumpToGraphNode}
+              />
+            ) : null}
             <SymbolSearch
               symbols={symbols}
               value={entry}

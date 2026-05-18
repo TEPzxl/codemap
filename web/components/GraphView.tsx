@@ -85,17 +85,37 @@ function GraphCanvas({
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>([]);
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter } = useReactFlow();
 
   const nodeByID = useMemo(() => new Map(graph?.nodes.map((node) => [node.id, node]) ?? []), [graph]);
   const edgeByID = useMemo(() => new Map(graph.edges.map((edge) => [edge.id, edge])), [graph]);
-  const connectedEdgeIDs = useMemo(() => {
+  const neighborhood = useMemo(() => {
+    const empty = {
+      upstream: new Set<string>(),
+      downstream: new Set<string>(),
+      relatedNodes: new Set<string>(),
+      relatedEdges: new Set<string>(),
+    };
     if (!graph || !selectedNode) {
-      return new Set<string>();
+      return empty;
     }
-    return new Set(
-      graph.edges.filter((edge) => edge.from === selectedNode.id || edge.to === selectedNode.id).map((edge) => edge.id),
-    );
+    const upstream = new Set<string>();
+    const downstream = new Set<string>();
+    const relatedNodes = new Set<string>([selectedNode.id]);
+    const relatedEdges = new Set<string>();
+    for (const edge of graph.edges) {
+      if (edge.to === selectedNode.id) {
+        upstream.add(edge.from);
+        relatedNodes.add(edge.from);
+        relatedEdges.add(edge.id);
+      }
+      if (edge.from === selectedNode.id) {
+        downstream.add(edge.to);
+        relatedNodes.add(edge.to);
+        relatedEdges.add(edge.id);
+      }
+    }
+    return { upstream, downstream, relatedNodes, relatedEdges };
   }, [graph, selectedNode]);
 
   const applyLayout = useCallback(() => {
@@ -105,17 +125,34 @@ function GraphCanvas({
       return;
     }
     const positioned = layoutGraph(graph);
-    setNodes(positioned.map((node) => toFlowNode(node, selectedNode?.id === node.id)));
-    setEdges(graph.edges.map((edge) => toFlowEdge(edge, connectedEdgeIDs.has(edge.id), selectedEdgeID === edge.id)));
-  }, [connectedEdgeIDs, graph, selectedEdgeID, selectedNode, setEdges, setNodes]);
+    setNodes(positioned.map((node) => toFlowNode(node, nodeSelectionState(node, selectedNode, neighborhood))));
+    setEdges(graph.edges.map((edge) => toFlowEdge(edge, neighborhood.relatedEdges.has(edge.id), selectedEdgeID === edge.id, Boolean(selectedNode))));
+  }, [graph, neighborhood, selectedEdgeID, selectedNode, setEdges, setNodes]);
 
   useEffect(() => {
     applyLayout();
+  }, [applyLayout]);
+
+  useEffect(() => {
     const timeout = window.setTimeout(() => {
       void fitView({ padding: 0.2, duration: 250 });
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [applyLayout, fitView]);
+  }, [fitView, graph]);
+
+  useEffect(() => {
+    if (!selectedNode) {
+      return;
+    }
+    const positioned = layoutGraph(graph).find((node) => node.id === selectedNode.id);
+    if (!positioned) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void setCenter(positioned.position.x + 150, positioned.position.y + 45, { zoom: 1.05, duration: 260 });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [graph, selectedNode, setCenter]);
 
   return (
     <div className="relative h-full min-h-[520px]">
@@ -175,11 +212,32 @@ function GraphCanvas({
   );
 }
 
-function nodeClassName(node: GraphNode, selected: boolean): string {
-  const base = "!rounded-md !border !px-3 !py-2 !shadow-sm !transition-shadow";
+type NodeSelectionState = "selected" | "upstream" | "downstream" | "dimmed" | "default";
+
+function nodeSelectionState(node: GraphNode, selectedNode: GraphNode | null, neighborhood: { upstream: Set<string>; downstream: Set<string>; relatedNodes: Set<string> }): NodeSelectionState {
+  if (!selectedNode) {
+    return "default";
+  }
+  if (node.id === selectedNode.id) {
+    return "selected";
+  }
+  if (neighborhood.upstream.has(node.id)) {
+    return "upstream";
+  }
+  if (neighborhood.downstream.has(node.id)) {
+    return "downstream";
+  }
+  if (!neighborhood.relatedNodes.has(node.id)) {
+    return "dimmed";
+  }
+  return "default";
+}
+
+function nodeClassName(node: GraphNode, selection: NodeSelectionState): string {
+  const base = "!rounded-md !border !px-3 !py-2 !shadow-sm !transition-all";
   const tone = nodeToneClass(node);
-  const selectedTone = selected ? "!border-moss !bg-green-50 !shadow-[0_0_0_3px_rgba(88,116,95,0.25)]" : "";
-  return `${base} ${tone} ${selectedTone}`;
+  const selectionTone = nodeSelectionClass(selection);
+  return `${base} ${tone} ${selectionTone}`;
 }
 
 function nodeToneClass(node: GraphNode): string {
@@ -195,7 +253,22 @@ function nodeToneClass(node: GraphNode): string {
   return "!border-blue-300 !bg-blue-50";
 }
 
-function toFlowNode(node: PositionedNode, selected: boolean): FlowNode {
+function nodeSelectionClass(selection: NodeSelectionState): string {
+  switch (selection) {
+    case "selected":
+      return "!border-ink !bg-green-50 !opacity-100 !shadow-[0_0_0_3px_rgba(88,116,95,0.28)]";
+    case "upstream":
+      return "!border-moss !bg-white !opacity-100 !shadow-[0_0_0_2px_rgba(88,116,95,0.16)]";
+    case "downstream":
+      return "!border-blue-500 !bg-white !opacity-100 !shadow-[0_0_0_2px_rgba(80,126,164,0.16)]";
+    case "dimmed":
+      return "!opacity-35";
+    default:
+      return "!opacity-100";
+  }
+}
+
+function toFlowNode(node: PositionedNode, selection: NodeSelectionState): FlowNode {
   return {
     id: node.id,
     position: node.position,
@@ -211,7 +284,7 @@ function toFlowNode(node: PositionedNode, selected: boolean): FlowNode {
         </div>
       ),
     },
-    className: nodeClassName(node, selected),
+    className: nodeClassName(node, selection),
   };
 }
 
@@ -228,9 +301,10 @@ function kindBadgeClass(node: GraphNode): string {
   return "rounded bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-blue-700";
 }
 
-function toFlowEdge(edge: Graph["edges"][number], highlighted: boolean, selected: boolean): FlowEdge {
+function toFlowEdge(edge: Graph["edges"][number], highlighted: boolean, selected: boolean, hasSelectedNode: boolean): FlowEdge {
   const stroke = edgeStroke(edge.resolution);
   const active = highlighted || selected;
+  const dimmed = hasSelectedNode && !active;
   return {
     id: edge.id,
     source: edge.from,
@@ -248,7 +322,7 @@ function toFlowEdge(edge: Graph["edges"][number], highlighted: boolean, selected
       stroke: selected ? "#1f2933" : stroke,
       strokeWidth: selected ? 3.4 : active ? 3 : 1.6,
       strokeDasharray: edge.candidate || edge.resolution === "interface" ? "6 4" : undefined,
-      opacity: active ? 1 : 0.78,
+      opacity: dimmed ? 0.22 : active ? 1 : 0.78,
     },
     labelStyle: {
       fill: active ? "#1f2933" : "#52616b",
