@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/tepzxl/codemap/internal/analyzer"
 	graphmodel "github.com/tepzxl/codemap/internal/graph"
@@ -20,6 +21,9 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 	showUnresolved := fs.Bool("show-unresolved", false, "include unresolved calls")
 	showInterface := fs.Bool("show-interface", false, "include interface calls")
 	expandInterface := fs.Bool("expand-interface", false, "include candidate concrete implementations for interface calls")
+	var packagePrefixes stringListFlag
+	fs.Var(&packagePrefixes, "package", "include only graph nodes whose package has this prefix; repeatable")
+	nodeLimit := fs.Int("node-limit", 0, "maximum graph nodes to return; 0 means unlimited")
 
 	rootPath, flagArgs := splitGraphArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -60,6 +64,8 @@ func runGraph(args []string, stdout io.Writer, stderr io.Writer) int {
 		ShowUnresolved:  *showUnresolved,
 		ShowInterface:   *showInterface,
 		ExpandInterface: *expandInterface,
+		PackagePrefixes: packagePrefixes.values(),
+		NodeLimit:       *nodeLimit,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "graph failed: %v\n", err)
@@ -101,6 +107,30 @@ func toGraphSymbols(symbols []analyzer.Symbol) []graphmodel.Symbol {
 		})
 	}
 	return result
+}
+
+type stringListFlag []string
+
+func (s *stringListFlag) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *stringListFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("package prefix must not be empty")
+	}
+	*s = append(*s, value)
+	return nil
+}
+
+func (s *stringListFlag) values() []string {
+	if len(*s) == 0 {
+		return nil
+	}
+	values := make([]string, len(*s))
+	copy(values, *s)
+	return values
 }
 
 func toGraphCalls(calls []analyzer.Call) []graphmodel.Call {

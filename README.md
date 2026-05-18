@@ -131,6 +131,14 @@ Expand interface call candidates explicitly:
 go run ./cmd/codemap graph ./examples/interface-call --entry main.main --depth 5 --expand-interface
 ```
 
+Filter graph output:
+
+```bash
+go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --show-external
+go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --package github.com/tepzxl/codemap/examples/layered-service/internal/service
+go run ./cmd/codemap graph ./examples/layered-service --entry main.main --depth 5 --node-limit 100
+```
+
 Serve API and UI:
 
 ```bash
@@ -210,6 +218,14 @@ Graph with interface implementation candidates:
 
 ```bash
 curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&expand_interface=true"
+```
+
+Graph filters:
+
+```bash
+curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&show_external=true"
+curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&package=github.com/tepzxl/codemap/examples/layered-service/internal/service"
+curl -s "http://localhost:8080/api/graph?entry=main.main&depth=5&node_limit=100"
 ```
 
 Source:

@@ -33,6 +33,8 @@ type BuildOptions struct {
 	ShowUnresolved  bool
 	ShowInterface   bool
 	ExpandInterface bool
+	PackagePrefixes []string
+	NodeLimit       int
 }
 
 func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, error) {
@@ -47,6 +49,9 @@ func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, er
 	}
 	if options.Depth < 0 {
 		return Graph{}, fmt.Errorf("depth must be >= 0")
+	}
+	if options.NodeLimit < 0 {
+		return Graph{}, fmt.Errorf("node limit must be >= 0")
 	}
 
 	adjacency := make(map[string][]Call)
@@ -87,6 +92,10 @@ func BuildGraph(symbols []Symbol, calls []Call, options BuildOptions) (Graph, er
 	sort.Slice(result.Edges, func(i, j int) bool {
 		return result.Edges[i].ID < result.Edges[j].ID
 	})
+
+	if err := applyGraphFilters(&result, options); err != nil {
+		return Graph{}, err
+	}
 
 	return result, nil
 }
@@ -150,6 +159,65 @@ func includeCall(call Call, options BuildOptions) bool {
 	default:
 		return true
 	}
+}
+
+func applyGraphFilters(result *Graph, options BuildOptions) error {
+	if len(options.PackagePrefixes) > 0 {
+		filterByPackage(result, options.PackagePrefixes)
+		if len(result.Nodes) == 0 {
+			return fmt.Errorf("package filter removed all nodes")
+		}
+	}
+	if options.NodeLimit > 0 && len(result.Nodes) > options.NodeLimit {
+		originalCount := len(result.Nodes)
+		result.Nodes = result.Nodes[:options.NodeLimit]
+		filterEdgesToNodes(result)
+		result.Warnings = append(result.Warnings, Warning{
+			Code:    "node-limit-exceeded",
+			Message: fmt.Sprintf("node limit %d truncated graph from %d nodes", options.NodeLimit, originalCount),
+		})
+	}
+	return nil
+}
+
+func filterByPackage(result *Graph, prefixes []string) {
+	nodes := make([]Node, 0, len(result.Nodes))
+	for _, node := range result.Nodes {
+		if packageMatches(node.Package, prefixes) {
+			nodes = append(nodes, node)
+		}
+	}
+	result.Nodes = nodes
+	filterEdgesToNodes(result)
+}
+
+func packageMatches(pkg string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		prefix = strings.TrimSpace(prefix)
+		if prefix != "" && strings.HasPrefix(pkg, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func filterEdgesToNodes(result *Graph) {
+	nodeSet := make(map[string]struct{}, len(result.Nodes))
+	for _, node := range result.Nodes {
+		nodeSet[node.ID] = struct{}{}
+	}
+
+	edges := make([]Edge, 0, len(result.Edges))
+	for _, edge := range result.Edges {
+		if _, ok := nodeSet[edge.From]; !ok {
+			continue
+		}
+		if _, ok := nodeSet[edge.To]; !ok {
+			continue
+		}
+		edges = append(edges, edge)
+	}
+	result.Edges = edges
 }
 
 func traverse(current string, depth int, maxDepth int, adjacency map[string][]Call, symbols map[string]Symbol, result *Graph, nodeSet map[string]struct{}, edgeSet map[string]struct{}, expanded map[string]int) {

@@ -1,10 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -154,6 +156,124 @@ func TestAPIGraphExpandInterface(t *testing.T) {
 	)
 }
 
+func TestAPIGraphFilters(t *testing.T) {
+	project, err := LoadProject(filepath.Join(findRepoRoot(t), "examples", "interface-call"))
+	if err != nil {
+		t.Fatalf("LoadProject returned error: %v", err)
+	}
+	handler := NewHandler(project)
+
+	t.Run("show interface", func(t *testing.T) {
+		got := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5&show_interface=true")
+		requireServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/interface-call/service.UserRepository.Save",
+			graphmodel.EdgeResolutionInterface,
+			false,
+		)
+		forbidServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/interface-call/service.(*UserService).CreateUser",
+			"github.com/tepzxl/codemap/examples/interface-call/repository.(*MemoryUserRepository).Save",
+		)
+	})
+
+	t.Run("package and node limit", func(t *testing.T) {
+		got := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5&package=github.com/tepzxl/codemap/examples/interface-call/service&node_limit=1")
+		if len(got.Nodes) != 1 {
+			t.Fatalf("node count = %d, want 1: %#v", len(got.Nodes), got.Nodes)
+		}
+		if got.Nodes[0].Package != "github.com/tepzxl/codemap/examples/interface-call/service" {
+			t.Fatalf("package filter did not apply: %#v", got.Nodes)
+		}
+		requireServerGraphWarning(t, got, "node-limit-exceeded")
+	})
+}
+
+func TestAPIGraphExternalAndUnresolvedFilters(t *testing.T) {
+	t.Run("show external", func(t *testing.T) {
+		project := loadTestProject(t)
+		handler := NewHandler(project)
+
+		got := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5&show_external=true")
+		requireServerGraphEdge(t, got,
+			"github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save",
+			"errors.New",
+			graphmodel.EdgeResolutionExternal,
+			false,
+		)
+	})
+
+	t.Run("show unresolved", func(t *testing.T) {
+		project := &Project{
+			Symbols: []analyzer.Symbol{
+				{
+					ID:        "example.com/app.main",
+					Label:     "main",
+					Kind:      "function",
+					Package:   "example.com/app",
+					File:      "main.go",
+					StartLine: 1,
+					EndLine:   3,
+				},
+			},
+			Calls: []analyzer.Call{
+				{
+					From:       "example.com/app.main",
+					To:         "dynamic",
+					Kind:       "call",
+					Resolution: graphmodel.EdgeResolutionUnresolved,
+					Callsite:   graphmodel.Callsite{File: "main.go", Line: 2, Column: 9},
+				},
+			},
+		}
+		handler := NewHandler(project)
+
+		hidden := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5")
+		forbidServerGraphEdge(t, hidden, "example.com/app.main", "dynamic")
+
+		visible := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5&show_unresolved=true")
+		requireServerGraphEdge(t, visible,
+			"example.com/app.main",
+			"dynamic",
+			graphmodel.EdgeResolutionUnresolved,
+			false,
+		)
+	})
+}
+
+func TestAPIGraphMatchesCLIForSameFilters(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	project, err := LoadProject(filepath.Join(repoRoot, "examples", "interface-call"))
+	if err != nil {
+		t.Fatalf("LoadProject returned error: %v", err)
+	}
+	handler := NewHandler(project)
+
+	apiGraph := requestGraph(t, handler, "/api/graph?entry=main.main&depth=5&expand_interface=true&package=github.com/tepzxl/codemap/examples/interface-call/service")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := cliRunGraphForServerTest([]string{
+		"graph",
+		filepath.Join(repoRoot, "examples", "interface-call"),
+		"--entry", "main.main",
+		"--depth", "5",
+		"--expand-interface",
+		"--package", "github.com/tepzxl/codemap/examples/interface-call/service",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("graph command exit code = %d, stderr = %s", code, stderr.String())
+	}
+	var cliGraph graphmodel.Graph
+	if err := json.Unmarshal(stdout.Bytes(), &cliGraph); err != nil {
+		t.Fatalf("CLI graph output is not json: %v\n%s", err, stdout.String())
+	}
+
+	if !graphsEqual(apiGraph, cliGraph) {
+		t.Fatalf("API and CLI graph differ:\napi=%#v\ncli=%#v", apiGraph, cliGraph)
+	}
+}
+
 func TestAPIErrors(t *testing.T) {
 	project := loadTestProject(t)
 	handler := NewHandler(project)
@@ -166,6 +286,9 @@ func TestAPIErrors(t *testing.T) {
 		{name: "unknown source node", path: "/api/source?node_id=not.exists", want: http.StatusNotFound},
 		{name: "invalid graph entry", path: "/api/graph?entry=not.exists&depth=5", want: http.StatusBadRequest},
 		{name: "invalid graph depth", path: "/api/graph?entry=main.main&depth=-1", want: http.StatusBadRequest},
+		{name: "invalid graph bool", path: "/api/graph?entry=main.main&show_external=maybe", want: http.StatusBadRequest},
+		{name: "invalid graph node limit", path: "/api/graph?entry=main.main&node_limit=-1", want: http.StatusBadRequest},
+		{name: "package filter removes all nodes", path: "/api/graph?entry=main.main&package=example.com/no-match", want: http.StatusBadRequest},
 		{name: "missing graph entry", path: "/api/graph?depth=5", want: http.StatusBadRequest},
 		{name: "unknown endpoint", path: "/api/not-found", want: http.StatusNotFound},
 	}
@@ -260,6 +383,53 @@ func decodeJSON(t *testing.T, rr *httptest.ResponseRecorder, out any) {
 	}
 }
 
+func requestGraph(t *testing.T, handler http.Handler, path string) graphmodel.Graph {
+	t.Helper()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	var got graphmodel.Graph
+	decodeJSON(t, rr, &got)
+	return got
+}
+
+func cliRunGraphForServerTest(args []string, stdout *bytes.Buffer, stderr *bytes.Buffer) int {
+	cmd := exec.Command("go", append([]string{"run", "./cmd/codemap"}, args...)...)
+	cmd.Dir = findRepoRootForExec()
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return exitErr.ExitCode()
+		}
+		stderr.WriteString(err.Error())
+		return 1
+	}
+	return 0
+}
+
+func findRepoRootForExec() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	dir := wd
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "."
+		}
+		dir = parent
+	}
+}
+
 func requireSymbolID(t *testing.T, symbols []struct {
 	ID string `json:"id"`
 }, id string) {
@@ -281,6 +451,39 @@ func requireServerGraphEdge(t *testing.T, output graphmodel.Graph, from string, 
 		}
 	}
 	t.Fatalf("missing graph edge from %q to %q resolution %q candidate %t in %#v", from, to, resolution, candidate, output.Edges)
+}
+
+func forbidServerGraphEdge(t *testing.T, output graphmodel.Graph, from string, to string) {
+	t.Helper()
+
+	for _, edge := range output.Edges {
+		if edge.From == from && edge.To == to {
+			t.Fatalf("unexpected graph edge from %q to %q in %#v", from, to, output.Edges)
+		}
+	}
+}
+
+func requireServerGraphWarning(t *testing.T, output graphmodel.Graph, code string) {
+	t.Helper()
+
+	for _, warning := range output.Warnings {
+		if warning.Code == code {
+			return
+		}
+	}
+	t.Fatalf("missing graph warning %q in %#v", code, output.Warnings)
+}
+
+func graphsEqual(a graphmodel.Graph, b graphmodel.Graph) bool {
+	left, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	right, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+	return string(left) == string(right)
 }
 
 func findRepoRoot(t *testing.T) string {

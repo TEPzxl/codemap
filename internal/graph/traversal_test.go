@@ -185,6 +185,61 @@ func TestGraphTraversal(t *testing.T) {
 		}
 	})
 
+	t.Run("package prefix filter keeps only matching nodes and edges", func(t *testing.T) {
+		got, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry:           "main.main",
+			Depth:           5,
+			PackagePrefixes: []string{"github.com/tepzxl/codemap/examples/layered-service/internal/service"},
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+
+		requireNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/service.(*UserService).CreateUser")
+		forbidNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/cmd/api.main")
+		forbidNode(t, got, "github.com/tepzxl/codemap/examples/layered-service/internal/repository.(*UserRepository).Save")
+		for _, edge := range got.Edges {
+			if !strings.HasPrefix(edge.From, "github.com/tepzxl/codemap/examples/layered-service/internal/service") ||
+				!strings.HasPrefix(edge.To, "github.com/tepzxl/codemap/examples/layered-service/internal/service") {
+				t.Fatalf("package filter left dangling or non-matching edge: %#v", edge)
+			}
+		}
+	})
+
+	t.Run("package prefix filter returns error when graph is empty", func(t *testing.T) {
+		_, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry:           "main.main",
+			Depth:           5,
+			PackagePrefixes: []string{"example.com/no-match"},
+		})
+		if err == nil {
+			t.Fatal("expected package filter with no matches to fail")
+		}
+		if !strings.Contains(err.Error(), "package filter removed all nodes") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("node limit truncates graph and records warning", func(t *testing.T) {
+		got, err := BuildGraph(layeredSymbols(), layeredCalls(), BuildOptions{
+			Entry:     "main.main",
+			Depth:     5,
+			NodeLimit: 2,
+		})
+		if err != nil {
+			t.Fatalf("BuildGraph returned error: %v", err)
+		}
+
+		if len(got.Nodes) != 2 {
+			t.Fatalf("node count = %d, want 2", len(got.Nodes))
+		}
+		requireWarning(t, got, "node-limit-exceeded")
+		for _, edge := range got.Edges {
+			requireNode(t, got, edge.From)
+			requireNode(t, got, edge.To)
+		}
+	})
+
 	t.Run("cycle does not recurse forever", func(t *testing.T) {
 		got, err := BuildGraph(cycleSymbols(), cycleCalls(), BuildOptions{
 			Entry: "example.com/cycle.A",
@@ -314,4 +369,14 @@ func forbidEdge(t *testing.T, graph Graph, from string, to string) {
 			t.Fatalf("unexpected edge %q -> %q in %#v", from, to, graph.Edges)
 		}
 	}
+}
+
+func requireWarning(t *testing.T, graph Graph, code string) {
+	t.Helper()
+	for _, warning := range graph.Warnings {
+		if warning.Code == code {
+			return
+		}
+	}
+	t.Fatalf("missing warning %q in %#v", code, graph.Warnings)
 }

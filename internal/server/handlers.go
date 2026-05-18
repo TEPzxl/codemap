@@ -52,19 +52,60 @@ func (p *Project) handleGraph(w http.ResponseWriter, r *http.Request) {
 		depth = parsed
 	}
 
+	showExternal, ok := parseBoolQuery(w, query.Get("show_external"), "show_external")
+	if !ok {
+		return
+	}
+	showUnresolved, ok := parseBoolQuery(w, query.Get("show_unresolved"), "show_unresolved")
+	if !ok {
+		return
+	}
+	showInterface, ok := parseBoolQuery(w, query.Get("show_interface"), "show_interface")
+	if !ok {
+		return
+	}
+	expandInterface, ok := parseBoolQuery(w, query.Get("expand_interface"), "expand_interface")
+	if !ok {
+		return
+	}
+
+	nodeLimit := 0
+	if rawNodeLimit := query.Get("node_limit"); rawNodeLimit != "" {
+		parsed, err := strconv.Atoi(rawNodeLimit)
+		if err != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "node_limit must be a non-negative integer")
+			return
+		}
+		nodeLimit = parsed
+	}
+
 	graph, err := p.BuildGraph(graphmodel.BuildOptions{
 		Entry:           entry,
 		Depth:           depth,
-		ShowExternal:    query.Get("show_external") == "true",
-		ShowUnresolved:  query.Get("show_unresolved") == "true",
-		ShowInterface:   query.Get("show_interface") == "true",
-		ExpandInterface: query.Get("expand_interface") == "true",
+		ShowExternal:    showExternal,
+		ShowUnresolved:  showUnresolved,
+		ShowInterface:   showInterface,
+		ExpandInterface: expandInterface,
+		PackagePrefixes: query["package"],
+		NodeLimit:       nodeLimit,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, graph)
+}
+
+func parseBoolQuery(w http.ResponseWriter, raw string, name string) (bool, bool) {
+	if raw == "" {
+		return false, true
+	}
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, name+" must be a boolean")
+		return false, false
+	}
+	return parsed, true
 }
 
 func (p *Project) handleSource(w http.ResponseWriter, r *http.Request) {
