@@ -105,8 +105,10 @@ http://localhost:8080
 3. 查看 `main -> handler -> service -> repository` 调用链。
 4. 点击 `UserService.CreateUser` 查看节点源码。
 5. 点击一条边查看调用点所在行。
-6. 切换 filter 或 depth 来刷新图。
-7. 修改本地源码后点击 `Rescan` 刷新索引。
+6. 查看 `Current graph` 摘要，确认 nodes、edges、packages 和 resolution 分布。
+7. 切换 filter 或 depth 来刷新图，当前 entry、depth、filter 和 package 会同步到 URL。
+8. 点击 `Copy view URL` 复制当前视图链接。
+9. 修改本地源码后点击 `Rescan` 刷新索引。
 
 更多说明见：[docs/demo/README.md](docs/demo/README.md)。
 

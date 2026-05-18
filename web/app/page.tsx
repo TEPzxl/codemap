@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { GraphSummaryPanel } from "@/components/GraphSummaryPanel";
 import { GraphView } from "@/components/GraphView";
 import { ProjectMetaPanel } from "@/components/ProjectMetaPanel";
 import { SourcePanel } from "@/components/SourcePanel";
@@ -19,6 +20,8 @@ import {
   type GraphRequest,
 } from "@/lib/api";
 import { displaySymbolID, inferModulePrefix } from "@/lib/displaySymbol";
+import { summarizeGraph } from "@/lib/graphSummary";
+import { parseViewState, serializeViewState, viewURL } from "@/lib/viewState";
 import type { Edge as GraphEdge, Graph, Node as GraphNode, ProjectMeta, SourceView, SymbolInfo, Warning } from "@/types/graph";
 
 export default function Home() {
@@ -31,6 +34,7 @@ export default function Home() {
   const [showInterface, setShowInterface] = useState(false);
   const [expandInterface, setExpandInterface] = useState(false);
   const [graph, setGraph] = useState<Graph | null>(null);
+  const [loadedGraphRequest, setLoadedGraphRequest] = useState<GraphRequest | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<Warning[]>([]);
@@ -45,17 +49,20 @@ export default function Home() {
   const [graphError, setGraphError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [rescanError, setRescanError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const graphLoadedRef = useRef(false);
   const graphRequestRef = useRef<GraphRequest>({
     entry: "main.main",
     depth: 5,
   });
+  const initialGraphRequestRef = useRef<GraphRequest | null>(null);
   const requestSeqRef = useRef(0);
   const selectedNodeRef = useRef<GraphNode | null>(null);
   const selectedEdgeRef = useRef<GraphEdge | null>(null);
   const sourceRef = useRef<SourceView | null>(null);
 
   const modulePrefix = inferModulePrefix(symbols);
+  const graphSummary = useMemo(() => summarizeGraph(graph), [graph]);
 
   const loadProjectIndex = useCallback(async (applyInitialState: boolean) => {
     setSymbolsLoading(true);
@@ -69,13 +76,32 @@ export default function Home() {
       if (applyInitialState) {
         const initialState = readInitialGraphState();
         const main = symbolResponse.symbols.find((symbol) => symbol.id.endsWith(".main"));
-        setEntry(initialState.entry ?? main?.id ?? symbolResponse.symbols[0]?.id ?? "main.main");
-        setDepth(initialState.depth ?? 5);
-        setPackageFilter(initialState.packageFilter ?? "");
-        setShowExternal(initialState.showExternal ?? false);
-        setShowUnresolved(initialState.showUnresolved ?? false);
-        setShowInterface(initialState.showInterface ?? false);
-        setExpandInterface(initialState.expandInterface ?? false);
+        const nextEntry = initialState.entry ?? main?.id ?? symbolResponse.symbols[0]?.id ?? "main.main";
+        const nextDepth = initialState.depth ?? 5;
+        const nextPackageFilter = initialState.packageFilter ?? "";
+        const nextShowExternal = initialState.showExternal ?? false;
+        const nextShowUnresolved = initialState.showUnresolved ?? false;
+        const nextShowInterface = initialState.showInterface ?? false;
+        const nextExpandInterface = initialState.expandInterface ?? false;
+        setEntry(nextEntry);
+        setDepth(nextDepth);
+        setPackageFilter(nextPackageFilter);
+        setShowExternal(nextShowExternal);
+        setShowUnresolved(nextShowUnresolved);
+        setShowInterface(nextShowInterface);
+        setExpandInterface(nextExpandInterface);
+
+        if (initialState.entry) {
+          initialGraphRequestRef.current = {
+            entry: nextEntry,
+            depth: nextDepth,
+            showExternal: nextShowExternal,
+            showUnresolved: nextShowUnresolved,
+            showInterface: nextShowInterface,
+            expandInterface: nextExpandInterface,
+            packagePrefix: nextPackageFilter || undefined,
+          };
+        }
       }
     } catch (error) {
       setAPIError(error instanceof Error ? error.message : "Failed to load project index");
@@ -103,10 +129,6 @@ export default function Home() {
     }),
     [depth, entry, expandInterface, packageFilter, showExternal, showInterface, showUnresolved],
   );
-
-  useEffect(() => {
-    graphRequestRef.current = buildGraphRequest();
-  }, [buildGraphRequest]);
 
   useEffect(() => {
     selectedNodeRef.current = selectedNode;
@@ -147,9 +169,8 @@ export default function Home() {
     setSourceError(null);
   }, []);
 
-  const loadGraph = useCallback(
-    async (options?: { entryOverride?: string; preserveSelection?: boolean }) => {
-      const request = buildGraphRequest(options?.entryOverride);
+  const loadGraphRequest = useCallback(
+    async (request: GraphRequest, options?: { preserveSelection?: boolean }) => {
       const preserveSelection = options?.preserveSelection ?? false;
       const requestID = requestSeqRef.current + 1;
       requestSeqRef.current = requestID;
@@ -164,12 +185,15 @@ export default function Home() {
         setSelectedEdgeID(null);
       }
       try {
+        graphRequestRef.current = request;
         writeURLState(request);
         const nextGraph = await fetchGraph(request);
         if (requestSeqRef.current !== requestID) {
           return;
         }
         graphLoadedRef.current = true;
+        graphRequestRef.current = request;
+        setLoadedGraphRequest(request);
         applyGraph(nextGraph, preserveSelection);
       } catch (error) {
         if (requestSeqRef.current === requestID) {
@@ -181,7 +205,15 @@ export default function Home() {
         }
       }
     },
-    [applyGraph, buildGraphRequest],
+    [applyGraph],
+  );
+
+  const loadGraph = useCallback(
+    async (options?: { entryOverride?: string; preserveSelection?: boolean }) => {
+      const request = buildGraphRequest(options?.entryOverride);
+      await loadGraphRequest(request, { preserveSelection: options?.preserveSelection });
+    },
+    [buildGraphRequest, loadGraphRequest],
   );
 
   useEffect(() => {
@@ -192,7 +224,19 @@ export default function Home() {
       void loadGraph({ preserveSelection: true });
     }, 350);
     return () => window.clearTimeout(timeout);
-  }, [depth, expandInterface, loadGraph, showExternal, showInterface, showUnresolved]);
+  }, [depth, expandInterface, loadGraph, packageFilter, showExternal, showInterface, showUnresolved]);
+
+  useEffect(() => {
+    if (symbolsLoading || graphLoadedRef.current) {
+      return;
+    }
+    const initialRequest = initialGraphRequestRef.current;
+    if (!initialRequest) {
+      return;
+    }
+    initialGraphRequestRef.current = null;
+    void loadGraphRequest(initialRequest);
+  }, [loadGraphRequest, symbolsLoading]);
 
   function selectSymbol(symbolID: string) {
     setEntry(symbolID);
@@ -258,6 +302,23 @@ export default function Home() {
     }
   }
 
+  async function copyViewURL() {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const request = loadedGraphRequest ?? buildGraphRequest();
+    const nextURL = `${window.location.origin}${viewURL(window.location.pathname, request)}`;
+    try {
+      await navigator.clipboard.writeText(nextURL);
+      setCopyStatus("Copied current view URL");
+    } catch {
+      setCopyStatus("Copy failed");
+    }
+    window.setTimeout(() => setCopyStatus(null), 2000);
+  }
+
+  const visibleGraphRequest = loadedGraphRequest ?? buildGraphRequest();
+
   return (
     <main className="grid min-h-screen grid-rows-[auto_1fr_auto]">
       <header className="border-b border-line bg-paper/95 px-5 py-4 backdrop-blur">
@@ -280,6 +341,14 @@ export default function Home() {
         {!sidebarCollapsed ? (
           <aside className="grid min-h-0 min-w-0 content-start gap-5 overflow-y-auto overflow-x-hidden border-b border-line bg-paper/90 p-4 lg:border-b-0 lg:border-r">
             <ProjectMetaPanel meta={meta} loading={rescanLoading} error={rescanError} onRescan={handleRescan} />
+            <GraphSummaryPanel
+              entry={graph?.entry ?? visibleGraphRequest.entry}
+              request={visibleGraphRequest}
+              summary={graphSummary}
+              loading={graphLoading}
+              copyStatus={copyStatus}
+              onCopyViewURL={copyViewURL}
+            />
             <SymbolSearch
               symbols={symbols}
               value={entry}
@@ -395,44 +464,19 @@ interface InitialGraphState {
 
 function readInitialGraphState(): InitialGraphState {
   if (typeof window === "undefined") {
-    return {};
+    return {
+      showExternal: false,
+      showUnresolved: false,
+      showInterface: false,
+      expandInterface: false,
+    };
   }
-  const params = new URLSearchParams(window.location.search);
-  const rawDepth = params.get("depth");
-  const depth = rawDepth === null ? undefined : Number(rawDepth);
-  return {
-    entry: params.get("entry") ?? undefined,
-    depth: depth !== undefined && Number.isInteger(depth) && depth >= 0 ? depth : undefined,
-    packageFilter: params.get("package") ?? undefined,
-    showExternal: params.get("show_external") === "true" || params.get("showExternal") === "true",
-    showUnresolved: params.get("show_unresolved") === "true" || params.get("showUnresolved") === "true",
-    showInterface: params.get("show_interface") === "true" || params.get("showInterface") === "true",
-    expandInterface: params.get("expand_interface") === "true" || params.get("expandInterface") === "true",
-  };
+  return parseViewState(window.location.search);
 }
 
 function writeURLState(options: GraphRequest) {
   if (typeof window === "undefined") {
     return;
   }
-  const params = new URLSearchParams({
-    entry: options.entry,
-    depth: String(options.depth),
-  });
-  if (options.showExternal) {
-    params.set("show_external", "true");
-  }
-  if (options.showUnresolved) {
-    params.set("show_unresolved", "true");
-  }
-  if (options.showInterface) {
-    params.set("show_interface", "true");
-  }
-  if (options.expandInterface) {
-    params.set("expand_interface", "true");
-  }
-  if (options.packagePrefix) {
-    params.set("package", options.packagePrefix);
-  }
-  window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  window.history.replaceState(null, "", `${window.location.pathname}?${serializeViewState(options).toString()}`);
 }
