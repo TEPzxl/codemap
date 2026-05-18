@@ -1,5 +1,15 @@
 import type { Graph, SourceSnippet, SymbolsResponse, WarningsResponse } from "@/types/graph";
 
+export interface GraphRequest {
+  entry: string;
+  depth: number;
+  showExternal?: boolean;
+  showUnresolved?: boolean;
+  showInterface?: boolean;
+  expandInterface?: boolean;
+  packagePrefix?: string;
+}
+
 async function requestJSON<T>(path: string): Promise<T> {
   const response = await fetch(path, {
     headers: {
@@ -27,12 +37,31 @@ export function fetchSymbols(): Promise<SymbolsResponse> {
   return requestJSON<SymbolsResponse>("/api/symbols");
 }
 
-export function fetchGraph(entry: string, depth: number): Promise<Graph> {
+export function graphURL(options: GraphRequest): string {
   const params = new URLSearchParams({
-    entry,
-    depth: String(depth),
+    entry: options.entry,
+    depth: String(options.depth),
   });
-  return requestJSON<Graph>(`/api/graph?${params.toString()}`);
+  if (options.showExternal) {
+    params.set("show_external", "true");
+  }
+  if (options.showUnresolved) {
+    params.set("show_unresolved", "true");
+  }
+  if (options.showInterface) {
+    params.set("show_interface", "true");
+  }
+  if (options.expandInterface) {
+    params.set("expand_interface", "true");
+  }
+  if (options.packagePrefix) {
+    params.set("package", options.packagePrefix);
+  }
+  return `/api/graph?${params.toString()}`;
+}
+
+export function fetchGraph(options: GraphRequest): Promise<Graph> {
+  return requestJSON<Graph>(graphURL(options));
 }
 
 export function fetchSource(nodeId: string): Promise<SourceSnippet> {
